@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Repo guide for `komari-theme-emerald`.
+Repo guide for `komari-theme-Glassmorphism`.
 
 ## Snapshot
 
@@ -54,7 +54,7 @@ Notes:
 Expected output:
 
 - `dist/`
-- `komari-theme-emerald-build-<sha>.zip`
+- `komari-theme-Glassmorphism-build-<sha>.zip`
 
 Zip contents:
 
