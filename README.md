@@ -12,16 +12,20 @@ komari-theme-Glassmorphism 是一个为 Komari Monitor 打造的毛玻璃（Glas
 ## 效果预览
 
 未登录主页
+
 <img width="1322" height="596" alt="image" src="https://github.com/user-attachments/assets/7817e96b-4878-49a3-b310-7925e4662dad" />
 
 
 未登录节点详情
+
 <img width="2552" height="1272" alt="image" src="https://github.com/user-attachments/assets/5cc9ca3a-9108-45e0-be54-19f0177b267d" />
 
 登录后主页节点卡片
+
 <img width="309" height="310" alt="image" src="https://github.com/user-attachments/assets/f7081c2f-d9bb-4a5a-bc15-b6aa6b6af43c" />
 
 登录后节点详情
+
 <img width="2560" height="1266" alt="image" src="https://github.com/user-attachments/assets/5573241d-c3f1-4d61-b33d-824c8b7be594" />
 
 
