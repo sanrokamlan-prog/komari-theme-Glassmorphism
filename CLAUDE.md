@@ -34,7 +34,7 @@ preview.png         (renamed from docs/preview.png)
 dist/               (Vite output)
 ```
 
-Vite injects two build-time constants via `define`: `__BUILD_VERSION__` (from `package.json`) and `__BUILD_GIT_HASH__`. Both are declared in [src/types/global.d.ts](src/types/global.d.ts) and may be referenced as globals in source.
+Vite injects two build-time constants via `define`: `__BUILD_VERSION__` (from [komari-theme.json](komari-theme.json), the single release-version source) and `__BUILD_GIT_HASH__`. Both are declared in [src/types/global.d.ts](src/types/global.d.ts) and may be referenced as globals in source.
 
 Manual chunks are configured in [vite.config.ts](vite.config.ts): `vue-vendor`, `echarts`, `reka-ui`, `vueuse`. Keep them aligned with actual usage when adding/removing large deps.
 

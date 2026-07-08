@@ -58,7 +58,7 @@ type GeneralCardPreset = 'basic' | 'ops' | 'finance' | 'traffic' | 'full' | 'cus
 type HomeQuickControlPreset = 'basic' | 'traffic' | 'ops' | 'full' | 'custom'
 type Lang = 'zh-CN' | 'en-US'
 type NodeViewMode = 'card' | 'list'
-type NodeCardSize = 'compact' | 'comfortable' | 'large'
+type NodeCardSize = 'mini' | 'compact' | 'comfortable' | 'large'
 type RpcTransportMode = 'websocket' | 'http'
 type EarthRenderer = 'realistic' | 'cobe' | 'tiled'
 
@@ -305,6 +305,10 @@ function parseHomeQuickControlPreset(value: unknown): HomeQuickControlPreset {
   return HOME_QUICK_CONTROL_PRESET_ALIASES[value.trim()] ?? 'full'
 }
 
+function normalizeHomeQuickControlOrder(keys: HomeQuickControlKey[]): HomeQuickControlKey[] {
+  return ['default', ...keys.filter(key => key !== 'default')]
+}
+
 function normalizeThemeSettings(raw: unknown): ThemeSettings {
   if (!raw)
     return EMPTY_THEME_SETTINGS
@@ -399,7 +403,7 @@ const useAppStore = defineStore('app', () => {
   }
 
   function isValidNodeCardSize(value: unknown): value is NodeCardSize {
-    return value === 'compact' || value === 'comfortable' || value === 'large'
+    return value === 'mini' || value === 'compact' || value === 'comfortable' || value === 'large'
   }
 
   function isValidEarthRenderer(value: unknown): value is EarthRenderer {
@@ -519,13 +523,19 @@ const useAppStore = defineStore('app', () => {
   const homeQuickControlOrder = computed<HomeQuickControlKey[]>(() => {
     const settings = themeSettings.value
     const preset = parseHomeQuickControlPreset(settings.homeQuickControlPreset)
-    if (preset === 'custom')
-      return parseKeyList(settings.homeQuickControlKeys, isHomeQuickControlKey, DEFAULT_HOME_QUICK_CONTROL_ORDER)
+    if (preset === 'custom') {
+      return normalizeHomeQuickControlOrder(
+        parseKeyList(settings.homeQuickControlKeys, isHomeQuickControlKey, DEFAULT_HOME_QUICK_CONTROL_ORDER),
+      )
+    }
 
-    if (typeof settings.homeQuickControlKeys === 'string' && typeof settings.homeQuickControlPreset !== 'string')
-      return parseKeyList(settings.homeQuickControlKeys, isHomeQuickControlKey, DEFAULT_HOME_QUICK_CONTROL_ORDER)
+    if (typeof settings.homeQuickControlKeys === 'string' && typeof settings.homeQuickControlPreset !== 'string') {
+      return normalizeHomeQuickControlOrder(
+        parseKeyList(settings.homeQuickControlKeys, isHomeQuickControlKey, DEFAULT_HOME_QUICK_CONTROL_ORDER),
+      )
+    }
 
-    return [...HOME_QUICK_CONTROL_PRESETS[preset]]
+    return normalizeHomeQuickControlOrder([...HOME_QUICK_CONTROL_PRESETS[preset]])
   })
 
   const homeQuickDefaultControl = computed<HomeQuickControlKey>(() => {
@@ -544,6 +554,8 @@ const useAppStore = defineStore('app', () => {
   const nodeListCustomTagsVisible = computed<boolean>(() => readBooleanSetting(themeSettings.value, 'nodeListCustomTagsVisible', true))
 
   const nodeDetailSectionTabsEnabled = computed<boolean>(() => readBooleanSetting(themeSettings.value, 'nodeDetailSectionTabsEnabled', false))
+
+  const offlineNodesLast = computed<boolean>(() => readBooleanSetting(themeSettings.value, 'offlineNodesLast', false))
 
   const homeHighLoadThreshold = computed<number>(() => readNumberSetting(themeSettings.value, 'homeHighLoadThreshold', 80, 1, 100))
 
@@ -696,6 +708,7 @@ const useAppStore = defineStore('app', () => {
     nodeListMetadataFields,
     nodeListCustomTagsVisible,
     nodeDetailSectionTabsEnabled,
+    offlineNodesLast,
     homeHighLoadThreshold,
     homeTrafficWarningThreshold,
     homeExpiringDays,

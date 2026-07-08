@@ -1,6 +1,6 @@
 import type { Plugin } from 'vite'
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
@@ -13,6 +13,29 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 const require = createRequire(import.meta.url)
 const fs = require('node:fs')
 const archiver = require('archiver')
+
+interface ThemeManifest {
+  preview?: unknown
+  version?: unknown
+}
+
+const themeJsonPath = resolve(__dirname, 'komari-theme.json')
+
+function readThemeManifest(): ThemeManifest {
+  if (!existsSync(themeJsonPath))
+    throw new Error('komari-theme.json not found')
+
+  return JSON.parse(readFileSync(themeJsonPath, 'utf-8')) as ThemeManifest
+}
+
+function getThemeVersion(): string {
+  const version = readThemeManifest().version
+
+  if (typeof version !== 'string' || !version.trim())
+    throw new TypeError('komari-theme.json does not contain a top-level string version field')
+
+  return version.trim()
+}
 
 function getCommitHash(): string {
   try {
@@ -38,12 +61,9 @@ function komariThemeZip(): Plugin {
       const commitHash = getCommitHash()
       const zipFileName = `komari-theme-Glassmorphism-build-${commitHash}.zip`
       const distDir = resolve(__dirname, 'dist')
-      const themeJsonPath = resolve(__dirname, 'komari-theme.json')
       const previewPath = resolve(__dirname, 'docs/preview.png')
       const outputPath = resolve(__dirname, zipFileName)
-      const themeManifest = existsSync(themeJsonPath)
-        ? JSON.parse(fs.readFileSync(themeJsonPath, 'utf-8')) as { preview?: unknown }
-        : {}
+      const themeManifest = readThemeManifest()
       const manifestPreviewName = typeof themeManifest.preview === 'string' && themeManifest.preview.trim()
         ? themeManifest.preview.trim()
         : 'preview.png'
@@ -70,9 +90,7 @@ function komariThemeZip(): Plugin {
 
         archive.pipe(output)
 
-        if (existsSync(themeJsonPath)) {
-          archive.file(themeJsonPath, { name: 'komari-theme.json' })
-        }
+        archive.file(themeJsonPath, { name: 'komari-theme.json' })
 
         if (existsSync(previewPath)) {
           archive.file(previewPath, { name: 'preview.png' })
@@ -89,11 +107,9 @@ function komariThemeZip(): Plugin {
   }
 }
 
-const packageJson = require('./package.json')
-
 export default defineConfig({
   define: {
-    __BUILD_VERSION__: JSON.stringify(packageJson.version),
+    __BUILD_VERSION__: JSON.stringify(getThemeVersion()),
     __BUILD_GIT_HASH__: JSON.stringify(getCommitHash()),
   },
   plugins: [

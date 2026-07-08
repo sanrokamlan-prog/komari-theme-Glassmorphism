@@ -152,28 +152,51 @@ function sortNodesByComputedValue(nodes: NodeData[], selector: (node: NodeData) 
     .map(item => item.node)
 }
 
+function placeOfflineNodesLast(nodes: NodeData[]): NodeData[] {
+  if (!appStore.offlineNodesLast)
+    return nodes
+
+  return [...nodes].sort((a, b) => {
+    if (a.online === b.online)
+      return 0
+    return a.online ? -1 : 1
+  })
+}
+
 function getQuickControlNodes(nodes: NodeData[], control: HomeQuickControlKey): NodeData[] {
+  let result: NodeData[]
+
   switch (control) {
     case 'monthlyCost':
-      return sortNodesByComputedValue(nodes, getNodeMonthlyCostCNY)
+      result = sortNodesByComputedValue(nodes, getNodeMonthlyCostCNY)
+      break
     case 'totalTraffic':
-      return sortNodesByComputedValue(nodes, getTotalTraffic)
+      result = sortNodesByComputedValue(nodes, getTotalTraffic)
+      break
     case 'upload':
-      return [...nodes].sort((a, b) => (b.net_out || 0) - (a.net_out || 0))
+      result = [...nodes].sort((a, b) => (b.net_out || 0) - (a.net_out || 0))
+      break
     case 'download':
-      return [...nodes].sort((a, b) => (b.net_in || 0) - (a.net_in || 0))
+      result = [...nodes].sort((a, b) => (b.net_in || 0) - (a.net_in || 0))
+      break
     case 'peak':
-      return sortNodesByComputedValue(nodes, getRealtimePeakSpeed)
+      result = sortNodesByComputedValue(nodes, getRealtimePeakSpeed)
+      break
     case 'offline':
       return nodes.filter(node => !node.online)
     case 'highLoad':
-      return nodes.filter(node => isHighLoadNode(node, appStore.homeHighLoadThreshold))
+      result = nodes.filter(node => isHighLoadNode(node, appStore.homeHighLoadThreshold))
+      break
     case 'expiring':
-      return nodes.filter(node => isExpiringNode(node, appStore.homeExpiringDays))
+      result = nodes.filter(node => isExpiringNode(node, appStore.homeExpiringDays))
+      break
     case 'default':
     default:
-      return nodes
+      result = nodes
+      break
   }
+
+  return placeOfflineNodesLast(result)
 }
 
 const groupNodeList = computed(() => {
@@ -239,6 +262,7 @@ function setQuickControl(key: HomeQuickControlKey) {
 
 const nodeCardGridClass = computed(() => {
   const sizeClass: Record<typeof appStore.nodeCardSize, string> = {
+    mini: 'gap-3 sm:grid-cols-[repeat(auto-fill,minmax(270px,1fr))]',
     compact: 'gap-3 sm:grid-cols-[repeat(auto-fill,minmax(300px,1fr))]',
     comfortable: 'gap-4 sm:grid-cols-[repeat(auto-fill,minmax(360px,1fr))]',
     large: 'gap-5 sm:grid-cols-[repeat(auto-fill,minmax(420px,1fr))]',

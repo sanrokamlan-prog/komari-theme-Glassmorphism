@@ -33,13 +33,16 @@ interface RemainingInfoTag {
   unit?: string
 }
 
+const isMiniNodeCard = computed(() => appStore.nodeCardSize === 'mini')
 const nodeCardXSize = computed(() => appStore.nodeCardSize === 'large' ? 'large' : 'medium')
-const nodeCardContentClass = computed(() => appStore.nodeCardSize === 'large' ? 'gap-4' : 'gap-3')
+const nodeCardContentClass = computed(() => appStore.nodeCardSize === 'large' ? 'gap-4' : isMiniNodeCard.value ? 'gap-2' : 'gap-3')
+const nodeCardContentPaddingClass = computed(() => isMiniNodeCard.value ? 'pb-2' : '')
 const nodeCardMetricGridClass = 'grid-cols-3'
-const nodeCardMetricBoxClass = computed(() => appStore.nodeCardSize === 'compact'
-  ? 'px-1.5 py-1.5'
-  : 'px-2 py-1.5')
-const nodeCardPanelClass = computed(() => appStore.nodeCardSize === 'large' ? 'h-14' : appStore.nodeCardSize === 'comfortable' ? 'h-12' : 'h-11')
+const nodeCardMetricBoxClass = computed(() => isMiniNodeCard.value
+  ? 'px-1 py-1'
+  : appStore.nodeCardSize === 'compact' ? 'px-1.5 py-1.5' : 'px-2 py-1.5')
+const nodeCardPanelClass = computed(() => appStore.nodeCardSize === 'large' ? 'h-14' : appStore.nodeCardSize === 'comfortable' ? 'h-12' : isMiniNodeCard.value ? 'h-7' : 'h-11')
+const nodeCardPingPanelClass = computed(() => isMiniNodeCard.value ? 'gap-1 p-1' : 'gap-1.5 p-2')
 
 const formatBytes = (bytes: number) => formatBytesWithConfig(bytes, appStore.byteDecimals)
 const formatBytesPerSecond = (bytes: number) => formatBytesPerSecondWithConfig(bytes, appStore.byteDecimals)
@@ -149,6 +152,7 @@ function hasRegion(region: string | null | undefined): boolean {
   <CardX
     hoverable
     :size="nodeCardXSize"
+    :content-class="nodeCardContentPaddingClass"
     class="node-card w-full cursor-pointer border-none shadow-[0_0_0_3px] shadow-transparent transition-all duration-200 rounded-xl"
     :class="[!props.node.online && '!shadow-red-500/30']"
     role="button"
@@ -203,7 +207,50 @@ function hasRegion(region: string | null | undefined): boolean {
         </div>
 
         <!-- 四项进度条 -->
-        <div class="grid grid-cols-2 gap-x-4 gap-y-2.5">
+        <div v-if="isMiniNodeCard" class="grid grid-cols-[3fr_2fr] gap-x-4 gap-y-2">
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+            <div class="flex flex-col gap-1">
+              <div class="flex justify-between text-xs">
+                <span class="text-muted-foreground">C</span>
+                <span class="tabular-nums font-medium">{{ (props.node.cpu ?? 0).toFixed(1) }}%</span>
+              </div>
+              <ProgressThin :percentage="props.node.cpu ?? 0" :status="cpuStatus" :height="4" />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <div class="flex justify-between text-xs">
+                <span class="text-muted-foreground">M</span>
+                <span class="tabular-nums font-medium">{{ memPercentage.toFixed(1) }}%</span>
+              </div>
+              <ProgressThin :percentage="memPercentage" :status="memStatus" :height="4" />
+            </div>
+
+            <div class="col-span-2 text-[11px] text-muted-foreground truncate">
+              {{ formatBytes(props.node.ram ?? 0) }} / {{ formatBytes(props.node.mem_total ?? 0) }}
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-1">
+            <div class="flex justify-between text-xs">
+              <span class="text-muted-foreground">流量</span>
+              <span class="tabular-nums font-medium" :class="trafficPercentageClass">
+                {{ hasTrafficLimit(props.node) ? `${trafficUsedPercentage.toFixed(1)}%` : '∞' }}
+              </span>
+            </div>
+            <ProgressThin :percentage="trafficUsedPercentage" :status="trafficStatus" :height="4" />
+            <div class="text-[11px] truncate" :class="trafficUsedPercentage >= 95 ? 'text-red-500' : 'text-muted-foreground'">
+              {{ formatBytes(trafficUsed) }}
+              <template v-if="hasTrafficLimit(props.node)">
+                / {{ formatBytes(props.node.traffic_limit) }}
+              </template>
+              <template v-else>
+                / ∞
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="grid grid-cols-2 gap-x-4 gap-y-2.5">
           <!-- CPU -->
           <div class="flex flex-col gap-1">
             <div class="flex justify-between text-xs">
@@ -317,8 +364,8 @@ function hasRegion(region: string | null | undefined): boolean {
         <!-- 延迟 + 丢包 -->
         <div class="grid grid-cols-2 gap-1.5">
           <div
-            class="group/panel relative flex flex-col gap-1.5 p-2 rounded-lg bg-slate-500/5"
-            :class="[nodeCardPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
+            class="group/panel relative flex flex-col rounded-lg bg-slate-500/5"
+            :class="[nodeCardPingPanelClass, nodeCardPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
             :title="latencyPanelTooltip"
           >
             <div class="flex items-center justify-between text-[11px] leading-none">
@@ -342,8 +389,8 @@ function hasRegion(region: string | null | undefined): boolean {
           </div>
 
           <div
-            class="group/panel relative flex flex-col gap-1.5 p-2 rounded-lg bg-slate-500/5"
-            :class="[nodeCardPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
+            class="group/panel relative flex flex-col rounded-lg bg-slate-500/5"
+            :class="[nodeCardPingPanelClass, nodeCardPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
             :title="lossPanelTooltip"
           >
             <div class="flex items-center justify-between text-[11px] leading-none">

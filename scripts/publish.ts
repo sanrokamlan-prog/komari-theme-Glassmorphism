@@ -7,15 +7,16 @@ import { createInterface } from 'node:readline/promises'
 const VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Z.-]+)?$/i
 const VERSION_FIELD_RE = /^(\s*"version"\s*:\s*")([^"]*)(")/m
 const PATCH_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/
+const VERSION_SOURCE_FILE = 'komari-theme.json'
 
-function readPackageVersion(): string {
-  const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as { version?: unknown }
+function readThemeVersion(): string {
+  const themeManifest = JSON.parse(readFileSync(resolve(process.cwd(), VERSION_SOURCE_FILE), 'utf8')) as { version?: unknown }
 
-  if (typeof packageJson.version !== 'string') {
-    throw new TypeError('package.json does not contain a top-level string version field')
+  if (typeof themeManifest.version !== 'string') {
+    throw new TypeError(`${VERSION_SOURCE_FILE} does not contain a top-level string version field`)
   }
 
-  return packageJson.version
+  return themeManifest.version
 }
 
 function bumpPatchVersion(version: string): string {
@@ -58,7 +59,7 @@ async function resolveVersion(): Promise<string> {
     return versionArg
   }
 
-  const currentVersion = readPackageVersion()
+  const currentVersion = readThemeVersion()
   const nextVersion = bumpPatchVersion(currentVersion)
   const rl = createInterface({ input: process.stdin, output: process.stdout })
 
@@ -82,12 +83,13 @@ async function resolveVersion(): Promise<string> {
   }
 }
 
-function updateVersionField(filePath: string, version: string): void {
+function updateThemeVersion(version: string): void {
+  const filePath = resolve(process.cwd(), VERSION_SOURCE_FILE)
   const content = readFileSync(filePath, 'utf8')
   const parsed = JSON.parse(content) as { version?: unknown }
 
   if (typeof parsed.version !== 'string') {
-    throw new TypeError(`${filePath} does not contain a top-level string version field`)
+    throw new TypeError(`${VERSION_SOURCE_FILE} does not contain a top-level string version field`)
   }
 
   const nextContent = content.replace(VERSION_FIELD_RE, `$1${version}$3`)
@@ -114,15 +116,10 @@ async function main(): Promise<void> {
     throw new Error(`Invalid version: ${version}`)
   }
 
-  const files = ['package.json', 'komari-theme.json']
-
-  for (const file of files) {
-    updateVersionField(resolve(process.cwd(), file), version)
-  }
-
-  gitAdd(files)
+  updateThemeVersion(version)
+  gitAdd([VERSION_SOURCE_FILE])
   console.log(`Prepared release version ${version}`)
-  console.log(`Staged: ${files.join(', ')}`)
+  console.log(`Version source: ${VERSION_SOURCE_FILE}`)
 }
 
 main().catch((error) => {

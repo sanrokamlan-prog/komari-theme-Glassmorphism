@@ -1,6 +1,7 @@
 import type { Client, NodeStatus } from '@/utils/rpc'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { useAppStore } from '@/stores/app'
 import { parseNodeGroups } from '@/utils/groupHelper'
 
 /** 流量限制类型 */
@@ -91,6 +92,7 @@ interface StatusData {
 
 const useNodesStore = defineStore('nodes', () => {
   // ===== 状态 =====
+  const appStore = useAppStore()
   const nodes = ref<NodeData[]>([])
   const wsConnectionState = ref<WsConnectionState>('disconnected')
   const wsReconnectAttempts = ref<number>(0)
@@ -98,8 +100,8 @@ const useNodesStore = defineStore('nodes', () => {
   // ===== 计算属性 =====
   const nodeIndex = new Map<string, NodeData>()
 
-  /** 可见节点（Komari hidden 节点不参与公开首页展示） */
-  const visibleNodes = computed(() => nodes.value.filter(n => !n.hidden))
+  /** 可见节点（未登录时 Komari hidden 节点不参与公开首页展示） */
+  const visibleNodes = computed(() => appStore.isLoggedIn ? nodes.value : nodes.value.filter(n => !n.hidden))
 
   /** 在线节点数量 */
   const onlineCount = computed(() => visibleNodes.value.filter(n => n.online).length)
@@ -115,6 +117,11 @@ const useNodesStore = defineStore('nodes', () => {
     })
     return Array.from(groupSet)
   })
+
+  function addIndexedNode(node: NodeData): void {
+    nodes.value.push(node)
+    nodeIndex.set(node.uuid, node)
+  }
 
   /** 按 UUID 索引的节点映射 */
   const nodesByUuid = computed(() => {
@@ -340,8 +347,7 @@ const useNodesStore = defineStore('nodes', () => {
         const node = createNodeFromClient(client)
         if (status)
           applyStatus(node, status)
-        nodes.value.push(node)
-        nodeIndex.set(node.uuid, node)
+        addIndexedNode(node)
       }
     }
 
@@ -397,8 +403,7 @@ const useNodesStore = defineStore('nodes', () => {
       else {
         // 添加新节点（不带状态）
         const newNode = createNodeFromClient(client)
-        nodes.value.push(newNode)
-        nodeIndex.set(newNode.uuid, newNode)
+        addIndexedNode(newNode)
         needSort = true
       }
     }
