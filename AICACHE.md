@@ -15,7 +15,7 @@
 - 状态：done
 - 目标：完成 v3.0.0 follow-up 后的发布收尾：提交并推送 main、重写 README 为更炫酷且更精简的版本、按发布契约发布 v3.0.1 latest release，并整理发帖文案。
 - 范围：此前 v3.0.0 frontend follow-up / AuditLogPanel / 数据积累提示相关源码、`README.md`、`komari-theme.json.version`、AICACHE 发布交接记录、GitHub release 资产。
-- 已完成：物理核心优先参与性价比每核成本并显示到 NodeCard；LoadChart 已增加自定义 start/end 时间范围；metric definitions 已加 5 分钟 TTL 缓存；`SharedCache.retain()` 已修复覆盖后 release 引用计数孤儿化；首页高级工具已新增 AuditLogPanel；磁盘预测/健康摘要已增加“数据积累中”提示；NodeCard 磁盘预测批量历史拉取显式传 `LOAD_RECORD_MAX_COUNT`；README 已重写为更短、更有设计感的版本，并按用户要求保留 Support / Support the Project / 写在最后，且“写在最后”位于致谢前；`komari-theme.json.version` 已更新为 `3.0.1`，准备推送 main 触发发布工作流。
+- 已完成：物理核心优先参与性价比每核成本并显示到 NodeCard；LoadChart 已增加自定义 start/end 时间范围；metric definitions 已加 5 分钟 TTL 缓存；`SharedCache.retain()` 已修复覆盖后 release 引用计数孤儿化；首页高级工具已新增 AuditLogPanel；磁盘预测/健康摘要已增加“数据积累中”提示；NodeCard 磁盘预测批量历史拉取显式传 `LOAD_RECORD_MAX_COUNT`；README 已重写为更短、更有设计感的版本，并按用户要求保留 Support / Support the Project / 写在最后，且“写在最后”位于致谢前；`komari-theme.json.version` 已更新为 `3.0.1`；main 已推送，GitHub release workflow 已成功发布 v3.0.1。
 - 不做：不新增审计日志单独主题配置，旧后端 history fallback 仍保持按小时近似；不在 `package.json` 添加顶层 version。
 
 ## 执行日志
