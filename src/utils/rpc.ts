@@ -830,8 +830,8 @@ export class KomariRpc {
   /**
    * Ping 测试
    */
-  async ping(): Promise<string> {
-    return this.client.call<string>('rpc.ping')
+  async ping(signal?: AbortSignal): Promise<string> {
+    return this.client.call<string>('rpc.ping', undefined, signal)
   }
 
   /**

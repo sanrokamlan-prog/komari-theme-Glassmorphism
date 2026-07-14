@@ -358,13 +358,6 @@ const nodeCardGridClass = computed(() => {
 
 <template>
   <div class="home-view" :class="!appStore.disablePageAnimation && 'home-view--motion'">
-    <div v-if="appStore.connectionError" class="alert px-4">
-      <Alert variant="destructive" class="border-none backdrop-blur-xs bg-red-400/10 rounded-md">
-        <AlertTitle>RPC 服务错误</AlertTitle>
-        <AlertDescription>连接服务器失败，请检查网络设置或刷新页面后再试。</AlertDescription>
-      </Alert>
-    </div>
-
     <div v-if="appStore.alertEnabled && appStore.alertContent" class="alert px-4">
       <Alert class="border-none bg-background/60 backdrop-blur-xs rounded-md">
         <AlertTitle v-if="appStore.alertTitle">

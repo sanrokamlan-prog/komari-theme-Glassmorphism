@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { Icon } from '@iconify/vue'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { Toaster } from '@/components/ui/sonner'
 import { useAppStore } from '@/stores/app'
-import { destroyInitManager, initApp } from '@/utils/init'
+import { destroyInitManager, initApp, retryInitApp } from '@/utils/init'
 import Background from './components/Background.vue'
 import Footer from './components/Footer.vue'
 import Header from './components/Header.vue'
@@ -12,6 +15,28 @@ import Provider from './components/Provider.vue'
 const appStore = useAppStore()
 
 const isReady = ref(false)
+const isRetryingConnection = ref(false)
+
+async function retryConnection(): Promise<void> {
+  if (isRetryingConnection.value)
+    return
+
+  isRetryingConnection.value = true
+  try {
+    const recovered = await retryInitApp()
+    if (recovered)
+      window.$message?.success('连接已恢复。')
+    else
+      window.$message?.error('仍无法连接服务器，请稍后再试。')
+  }
+  catch (error) {
+    console.error('[App] Connection retry failed:', error)
+    window.$message?.error('重试失败，请稍后再试。')
+  }
+  finally {
+    isRetryingConnection.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -50,6 +75,19 @@ onUnmounted(() => {
     >
       <div v-if="!appStore.loading" class="app-shell">
         <main class="min-h-screen overflow-hidden">
+          <div v-if="appStore.connectionError" class="relative z-10 mx-auto max-w-[1280px] px-4 pt-4">
+            <Alert variant="destructive" class="!pr-28 border-none bg-red-400/10 backdrop-blur-xs rounded-md">
+              <Icon icon="tabler:plug-connected-x" />
+              <AlertTitle>RPC 服务错误</AlertTitle>
+              <AlertDescription>连接服务器失败，请检查网络后重试。</AlertDescription>
+              <AlertAction class="top-1/2 -translate-y-1/2">
+                <Button size="sm" variant="outline" :disabled="isRetryingConnection" @click="retryConnection">
+                  <Icon :icon="isRetryingConnection ? 'tabler:loader-2' : 'tabler:refresh'" :class="isRetryingConnection && 'animate-spin'" />
+                  {{ isRetryingConnection ? '重试中' : '重试' }}
+                </Button>
+              </AlertAction>
+            </Alert>
+          </div>
           <div class="max-w-[1280px] mx-auto">
             <RouterView v-slot="{ Component }">
               <Transition

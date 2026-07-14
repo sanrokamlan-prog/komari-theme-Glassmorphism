@@ -13,12 +13,24 @@
 ## 当前任务
 
 - 状态：in-progress
-- 目标：发布 `v3.1.1`，将默认背景、列表模式、公开 Ping 和快速性能修复推送到 `main` 并生成 GitHub Release。
-- 范围：更新 `komari-theme.json` 唯一版本源和 README 更新日志；lint/build；提交并重放远端 README 提交；推送 `main`；核对 Actions、tag、Release 和 zip 资产。
-- 计划：版本与文档 -> 本地验证 -> 提交 -> rebase `origin/main` -> 推送 -> GitHub Release 验证。
-- 不做：不提交 `.claude/` 本机配置，不手工创建重复 tag，不扩大本次快速修复范围。
+- 目标：发布 `v3.1.2`，修复启动健康检查单点失败导致用户、节点和实时连接全部跳过的问题，并让所有路由都能看到连接错误和手动重试入口。
+- 里程碑：M4 用户可见可靠性 / 错误反馈修复；不新增业务功能，不改变公开路由和权限边界。
+- 范围：`src/utils/init.ts` 启动任务隔离、健康检查重试和恢复；`src/App.vue` 全局错误提示；移除 `HomeView.vue` 重复提示；必要的 RPC/常量调整；快速复查明显 bug 与高收益性能点；更新 `komari-theme.json` / README；lint/build；提交推送并验证 GitHub Release。
+- 计划：并行独立初始化 -> 后台轮询恢复 -> 全局可重试提示 -> 快速仓库复查 -> v3.1.2 版本与文档 -> 最终验证 -> 推送与 Release 核对。
+- 不做：不提交 `.claude/` 本机配置，不在本次补丁中混入卡片虚拟化、地球纹理重制等需要专项性能/视觉回归的改动。
 
 ## 执行日志
+
+### 2026-07-14 startup single-point-of-failure fix
+
+- 已确认根因：`InitManager.init()` 串行等待 `healthCheck()`，首次 Ping 失败会阻止 public settings、用户、节点数据和实时连接启动；`connectionError` 仅在首页渲染，详情路由缺少故障反馈。
+- 设计：健康检查使用已有 5 秒配置并增加 3 次递增间隔重试；四个启动请求通过 `Promise.allSettled()` 隔离；节点首拉失败仍启动轮询自动恢复；显式重试复用现有 manager，避免重复定时器和 WebSocket 监听。
+- 已实现：RPC Ping 支持 AbortSignal；健康检查超时会取消底层请求；初始化改为独立并行；全局 app shell 显示连接错误和重试状态，首页重复提示已移除。
+- 首轮验证：`bun run lint`、`bun run build` 通过，生成 `komari-theme-Glassmorphism-build-bb52e94.zip`；仅有既有 `@vueuse/core` PURE 注释提示和 `globe` chunk 体积警告。
+- 浏览器验证：首页和直接进入 `/instance/missing-node` 都显示全局连接错误；1270px 和 390x844 无横向溢出或按钮/文案重叠；重试按钮会进入禁用的“重试中”状态，失败后恢复。
+- 快速复查：未发现新的发布阻断 bug；Firefox 毛玻璃回退、列表虚拟化、共享 Ping/负载缓存已存在。后续高收益专项候选为卡片模式 30+ 节点全量挂载，以及约 2.98 MB 地球纹理和 1.98 MB `globe` chunk 的传输/解析成本。
+- 发布准备：`komari-theme.json.version` 已更新为 `3.1.2`，README 当前版本与更新日志已同步。
+- 最终验证：版本更新后 `bun run lint`、`bun run build` 通过，生成 `komari-theme-Glassmorphism-build-bb52e94.zip`；zip 顶层契约为 `komari-theme.json`、`preview.png`、`dist/`，包内版本为 `3.1.2`。构建仍仅有既有 `@vueuse/core` PURE 注释和 `globe` 大 chunk 警告。
 
 ### 2026-07-14 v3.1.1 release preparation
 

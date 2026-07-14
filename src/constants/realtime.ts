@@ -5,6 +5,8 @@ export const REALTIME_CONFIG = {
     reconnectInterval: 3 * TIME_MS.second,
     maxReconnectAttempts: 5,
     healthCheckTimeout: 5 * TIME_MS.second,
+    healthCheckAttempts: 3,
+    healthCheckRetryInterval: TIME_MS.second,
   },
   polling: {
     clientsRefreshInterval: TIME_MS.minute,

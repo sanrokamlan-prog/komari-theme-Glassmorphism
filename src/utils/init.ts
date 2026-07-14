@@ -18,6 +18,10 @@ interface InitConfig {
   wsMaxReconnectAttempts?: number
   /** 后端健康检查超时（毫秒） */
   healthCheckTimeout?: number
+  /** 后端健康检查总尝试次数 */
+  healthCheckAttempts?: number
+  /** 后端健康检查重试基础间隔（毫秒） */
+  healthCheckRetryInterval?: number
   /** POST 模式连续失败次数阈值 */
   postFailureThreshold?: number
 }
@@ -26,6 +30,8 @@ const DEFAULT_CONFIG: Required<InitConfig> = {
   wsReconnectInterval: REALTIME_CONFIG.websocket.reconnectInterval,
   wsMaxReconnectAttempts: REALTIME_CONFIG.websocket.maxReconnectAttempts,
   healthCheckTimeout: REALTIME_CONFIG.websocket.healthCheckTimeout,
+  healthCheckAttempts: REALTIME_CONFIG.websocket.healthCheckAttempts,
+  healthCheckRetryInterval: REALTIME_CONFIG.websocket.healthCheckRetryInterval,
   postFailureThreshold: REALTIME_CONFIG.polling.postFailureThreshold,
 }
 
@@ -45,6 +51,7 @@ class InitManager {
   private postFailureCount = 0
   private lastClientsFetchedAt = 0
   private isInitialized = false
+  private redirectingToAdmin = false
   private useWebSocket: boolean | null = null // 根据主题配置决定
   constructor(config: InitConfig = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config }
@@ -73,56 +80,109 @@ class InitManager {
     }
 
     try {
-      // 1. 测试后端服务是否正常
-      await this.healthCheck()
+      await this.runStartupRequests()
 
-      // 2. 获取服务端公开属性
-      await this.fetchPublicSettings()
+      if (this.destroyed || this.redirectingToAdmin)
+        return
 
-      // 3. 获取用户信息
-      await this.fetchUserInfo()
-
-      // 4. 获取节点信息和最新状态
-      await this.fetchNodesData()
-
-      // 5. 解除加载状态
-      this.appStore.loading = false
-
-      // 6. 建立 WebSocket 连接并开始轮询
+      // 首次数据请求即使失败，也启动实时连接和轮询以便自动恢复。
       this.startWebSocketAndPolling()
-
       this.isInitialized = true
     }
     catch (error) {
       console.error('[InitManager] Initialization failed:', error)
-      // 即使失败也解除加载状态，显示错误页面
-      this.appStore.loading = false
+      this.appStore.connectionError = true
       throw error
     }
+    finally {
+      // 即使部分请求失败也解除加载状态，让全局错误提示和公共页面可见。
+      this.appStore.loading = false
+    }
+  }
+
+  /**
+   * 独立执行启动请求，避免任一请求失败阻断其他初始化任务。
+   */
+  private async runStartupRequests(): Promise<boolean> {
+    const [healthResult, , , nodesResult] = await Promise.allSettled([
+      this.healthCheck(),
+      this.fetchPublicSettings(),
+      this.fetchUserInfo(),
+      this.fetchNodesData(),
+    ])
+
+    if (this.destroyed || this.redirectingToAdmin)
+      return false
+
+    const nodesAvailable = nodesResult.status === 'fulfilled'
+    this.appStore.connectionError = !nodesAvailable
+
+    if (nodesAvailable) {
+      this.postFailureCount = 0
+    }
+    else if (healthResult.status === 'rejected') {
+      console.error('[InitManager] Backend health check and initial node load both failed')
+    }
+
+    return nodesAvailable
+  }
+
+  /**
+   * 重新执行启动请求，不重复创建轮询定时器或 WebSocket 监听。
+   */
+  async retry(): Promise<boolean> {
+    if (this.destroyed || this.redirectingToAdmin)
+      return false
+
+    const recovered = await this.runStartupRequests()
+    if (!this.isInitialized && !this.destroyed && !this.redirectingToAdmin) {
+      this.startWebSocketAndPolling()
+      this.isInitialized = true
+    }
+    return recovered
   }
 
   /**
    * 健康检查 - 测试后端服务是否正常
    */
   private async healthCheck(): Promise<void> {
-    try {
-      const result = await this.rpc.ping()
-      if (result !== 'pong') {
-        throw new RpcError(-32000, 'Unexpected health check response')
-      }
-    }
-    catch (error) {
-      if (error instanceof RpcError && error.code === 401) {
-        console.warn('[InitManager] Private site detected, redirecting to /admin')
-        this.appStore.updateLoginState(false)
-        this.appStore.loading = false
-        location.href = '/admin'
+    let lastError: unknown
+
+    for (let attempt = 1; attempt <= this.config.healthCheckAttempts; attempt++) {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), this.config.healthCheckTimeout)
+
+      try {
+        const result = await this.rpc.ping(controller.signal)
+        if (result !== 'pong') {
+          throw new RpcError(-32000, 'Unexpected health check response')
+        }
         return
       }
-      console.error('[InitManager] Health check failed:', error)
-      this.appStore.connectionError = true
-      throw new Error('Backend service unavailable')
+      catch (error) {
+        if (error instanceof RpcError && error.code === 401) {
+          console.warn('[InitManager] Private site detected, redirecting to /admin')
+          this.redirectingToAdmin = true
+          this.appStore.updateLoginState(false)
+          this.appStore.loading = false
+          location.href = '/admin'
+          return
+        }
+
+        lastError = error
+        if (attempt < this.config.healthCheckAttempts && !this.destroyed) {
+          const retryDelay = this.config.healthCheckRetryInterval * 2 ** (attempt - 1)
+          console.warn(`[InitManager] Health check attempt ${attempt} failed, retrying in ${retryDelay}ms`, error)
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+        }
+      }
+      finally {
+        clearTimeout(timeoutId)
+      }
     }
+
+    console.error('[InitManager] Health check failed after retries:', lastError)
+    throw new Error('Backend service unavailable')
   }
 
   /**
@@ -418,6 +478,17 @@ export async function initApp(): Promise<void> {
   }
 
   await initManager.init()
+}
+
+/**
+ * 重试启动数据请求，不重复初始化实时连接。
+ */
+export async function retryInitApp(): Promise<boolean> {
+  if (!initManager) {
+    initManager = new InitManager()
+  }
+
+  return initManager.retry()
 }
 
 /**
