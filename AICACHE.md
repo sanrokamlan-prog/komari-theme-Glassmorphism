@@ -12,7 +12,7 @@
 
 ## 当前任务
 
-- 状态：in_progress
+- 状态：done
 - 目标：发布 v3.1.6，完成默认主题后台适配、访客安全审计、首页延迟/丢包与价值明细交互、原创默认背景，并将实时费用估算分别提交 Komari 与 komari-web 上游。
 - 里程碑：M3 访客审计；M4 交互与背景；M5 默认主题整合和实时费用估算；M6 可重复同步、验证与发布。
 - 范围：完整官方 `/admin`、`/terminal`、`/manage/*` 静态子应用；访客 IP/UA/浏览器指纹/WebRTC 摘要与 CSV/JSON 导出；Ping 弹窗；汇率/价值明细；原创默认背景；Komari/komari-web 计费 PR。
@@ -29,9 +29,11 @@
 - 主题功能：节点卡/列表延迟与丢包可打开完整 Ping 图；剩余价值可打开逐节点费用、币种和汇率明细；访客审计增加开关、UTF-8 字节截断及完整 JSON/CSV 导出；默认背景替换为原创青蓝/淡紫/薄荷网格图。
 - 背景资产：`public/images/default-background-v2.webp` 与 `output/imagegen/default-background-v2.webp` 均为 2048x1152、32,436 bytes、SHA-256 `42377961822666817def3d3b51b2c236a0f5f631dd1475535d9438a6b7ac551b`；仅使用本地 Lanczos 放大修正画布，未再次调用图像 API。
 - 代码复核：修复费用明细把“未设置到期时间”误显示为“今天”的问题；空费率和空开机费按 0，开机费只有存在首次成功上报锚点才计入；汇率保持“1 CNY 对应目标币种”的既有换算方向；旧核心能力检测通过。
-- 验证：`bun run lint`、`bun run type-check`、`bun run build`、`git diff --check` 全部通过。浏览器验证桌面无横向溢出；价值弹窗 1280x720 下为 1024x525，390x844 下为 358x687 且表格滚动不溢出；`/admin` 恢复原 URL、完整菜单和 `glass-admin.css` 正常加载。
+- 验证：`bun run lint`、`bun run type-check`、`bun run build` 和产品源码 diff check 全部通过。浏览器验证桌面无横向溢出；价值弹窗 1280x720 下为 1024x525，390x844 下为 358x687 且表格滚动不溢出；`/admin` 恢复原 URL、完整菜单和 `glass-admin.css` 正常加载。
 - 本地包：`komari-theme-Glassmorphism-build-e3abeff.zip`，7,606,509 bytes，SHA-256 `7539c1ef6ba8d65391215d04075256e59957e1b3af758832c72841412c17632b`；770 个条目，顶层为 `komari-theme.json`、`preview.png`、`dist/`，包内版本 3.1.6，`dist/admin-app/` 419 个条目且无 PWA/Service Worker 文件。
-- 发布边界：`.claude/` 和 `output/` 不进入提交；版本唯一来源已更新为 `komari-theme.json` 的 3.1.6。待推送 main 后核验 Actions、tag、Release 和线上 zip。
+- 发布完成：提交 `c368669ec10468a026991e21556ee3e34d5c99a0` 已推送 main；Release On Version Bump run `#29420879366`（#54）成功；annotated tag `v3.1.6`、Release target 与 main 均指向该提交。
+- 线上资产：`komari-theme-Glassmorphism-build-c368669.zip`，7,615,774 bytes，GitHub digest / 下载后 SHA-256 均为 `c9495a97e754512103fb0bb38a528ea27a31c3e02888cf18b796fd7a6985f3ae`；下载复核版本 3.1.6、770 个条目、419 个后台条目、顶层契约和无 PWA/Service Worker 文件均正确。
+- 发布边界：`.claude/` 和 `output/` 未进入发布提交；版本唯一来源保持 `komari-theme.json` 的 3.1.6。
 
 ### 2026-07-15 default-theme integration review follow-up
 
