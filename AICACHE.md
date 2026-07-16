@@ -12,15 +12,28 @@
 
 ## 当前任务
 
-- 状态：in-progress
-- 目标：生成 Linux amd64 本地集成测试包，合并验证 Komari PR #604、已合并访客审计 PR #602、komari-web PR #82 与 Glassmorphism v3.1.6 内置默认主题。
+- 状态：done，等待用户部署运行态测试
+- 目标：生成 Linux amd64 本地集成测试包，合并验证 Komari PR #604、已合并访客审计 PR #602、komari-web PR #82 与 Glassmorphism v3.1.8 内置默认主题。
 - 里程碑：M6 集成构建、测试交付与验证，不扩大现有上游 PR 范围。
 - 范围：CGO Linux amd64 核心二进制、可导入主题 zip、独立管理端构建、测试说明与 SHA-256；部署后在用户保持登录的浏览器中继续联调。
 - 安全约束：`visitor_audit_enabled` 保持上游默认关闭，由管理员在审计面板明确开启；测试包不预置数据库、账号、密钥或访客数据。
-- 来源：Komari PR #604 `f08f47d`（含访客审计 PR #602）；komari-web PR #82 `0fee1f1`；主题基线 `261fcc1`，目标发布 v3.1.7。
+- 来源：Komari PR #604 `f08f47d`（含访客审计 PR #602）；komari-web PR #82 `0fee1f1`；Glassmorphism Release `v3.1.8` / `a52572a`。
 - 不做：不把 Glassmorphism 默认主题替换混入计费 PR #604；不发布测试构建为正式 Release；不构建 Windows 包。
 
 ## 执行日志
+
+### 2026-07-16 exact Linux integration bundle
+
+- 刷新上游状态：Komari #604 仍为 open，head `f08f47d6a7f5e4cdec28a1e89c2183f1c1b6e1fb`，前端及 Linux/Windows 构建矩阵全部成功；komari-web #82 仍为 open，head `0fee1f123009eca4b5f380549845bed756fa2d0c`。
+- 发现旧本地 Komari 快照除默认主题外仍有 23 个换行归一化后的真实源码差异，集中在 Metric Store、迁移和启动流程，因此废弃旧二进制，不作为 PR 精确测试包交付。
+- 从 GitHub 下载 `f08f47d` 原始源码，创建干净编译树；逐项比较 `cmd/database/pkg/protocol/utils/web` 共 243 个核心文件，排除有意替换的 `web/public/defaultTheme` 后差异为 0。
+- 默认主题替换为已发布的 Glassmorphism `v3.1.8` 资产；包内配置名为“主题设置”，完整管理端来源记录为 komari-web `0fee1f1`，路由桥接覆盖 `/admin`、`/terminal`、`/manage/*` 并加载 `glass-admin.css`。
+- 使用 Go `1.26.4`、Zig `0.14.1`、`x86_64-linux-musl`、`CGO_ENABLED=1` 和 `-buildvcs=false` 构建 Linux amd64 ELF；显式版本为 `integration-f08f47d-theme-v3.1.8`，版本哈希为完整 Komari PR head。
+- `go test ./database/clients ./web/api/client ./web/rpc/jsonrpc` 在 Windows amd64 CGO + Zig 环境下通过；`go vet ./...` 通过；Linux 目标构建通过。
+- 功能存在性清单确认：计费费率/锚点/下月到期/一次性开机费/流量重置保护/非阻塞上报，访客审计默认关闭/RPC/IP-UA 限流/UTF-8 截断/日志索引与 SQL 过滤，主题审计摘要及 JSON/CSV 导出，以及 Glassmorphism 默认前后台均进入交付包。
+- 最终目录：`output/integration-test/final/komari-glassmorphism-integration-20260716/`；总包：`output/integration-test/final/komari-glassmorphism-integration-20260716.zip`，32,089,492 bytes，SHA-256 `02f896751dfb87ff1a4a144ca69c3f9bfd83376de54492ba2013918f51c6c873`。
+- 二进制 SHA-256 `a966d695e4d3b84496567465ed8bf7a585459656bf756a1e50616ff21b3578ae`；主题 zip SHA-256 `f4dd86ad26a9a55ebfcecc1c76ac07cdcd5fcfd1883cf608ec4e7f491388ea26`；独立后台 zip SHA-256 `e17fa820a4a2d184541f068bc996dea70ffa3bb6502be102dad902b1bd599f6d`。
+- 未包含：每日/每周主题更新提醒、自动安装主题、不可篡改账本；实时费用仍是 fork 实验性估算功能。运行态数据库迁移、真实 Agent 上报和登录浏览器联调等待用户在 Linux 测试机部署。
 
 ### 2026-07-15 Linux integration test bundle
 
