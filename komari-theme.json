@@ -1,10 +1,10 @@
 {
-  "name": "Komari Glassmorphism",
-  "short": "Glassmorphism",
-  "description": "A Glassmorphism theme for Komari",
+  "name": "Komari Glassmorphism Lobster Edition",
+  "short": "Lobster Edition",
+  "description": "Komari Glassmorphism 主题 fork，首页卡片按 Ping 任务分开显示延迟",
   "version": "3.2.0",
-  "author": "sanrokamlan",
-  "url": "https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism",
+  "author": "xueyeshengdan",
+  "url": "https://github.com/xueyeshengdan/komari-theme-Glassmorphism",
   "preview": "preview.png",
   "configuration": {
     "type": "managed",

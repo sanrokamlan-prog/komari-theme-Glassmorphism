@@ -93,7 +93,7 @@ function warnZeroSamplesIfNeeded(entry: SharedLoadRecordsEntry, uuid: string, ca
     return
 
   zeroSampleWarningKeys.add(warningKey)
-  console.warn(`[Komari Glassmorphism] capped shared load history returned zero samples for online node ${uuid}; maxCount=${LOAD_RECORD_MAX_COUNT}. This may indicate cap starvation or missing backend history.`)
+  console.warn(`[Komari Glassmorphism Lobster Edition] capped shared load history returned zero samples for online node ${uuid}; maxCount=${LOAD_RECORD_MAX_COUNT}. This may indicate cap starvation or missing backend history.`)
 }
 
 async function loadNodeRecordsIntoEntry(entry: SharedLoadRecordsEntry, uuid: string, hours: number, maxCount?: number): Promise<StatusRecord[]> {

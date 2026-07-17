@@ -1,10 +1,11 @@
 {
-  "name": "komari-theme-Glassmorphism",
+  "name": "komari-theme-glassmorphism-lobster-edition",
+  "displayName": "Komari Glassmorphism Lobster Edition",
   "type": "module",
   "packageManager": "bun@1.3.14",
   "author": {
-    "name": "Tokinx",
-    "url": "https://github.com/Tokinx"
+    "name": "xueyeshengdan",
+    "url": "https://github.com/xueyeshengdan"
   },
   "license": "MIT",
   "engines": {
