@@ -482,11 +482,11 @@ function hasRegion(region: string | null | undefined): boolean {
             <div
               v-for="task in visiblePingDisplays"
               :key="task.taskId"
-              class="rounded-lg bg-slate-500/5 overflow-hidden"
+              class="group flex flex-col gap-[1px] rounded-lg bg-slate-500/5 p-2"
               :class="[!props.node.online ? 'blur-xs opacity-50' : '']"
             >
-              <!-- 任务头部：名称 + 数值摘要 -->
-              <div class="flex items-center justify-between px-2 pt-1.5 pb-0.5 text-[11px] leading-none">
+              <!-- 任务头部 -->
+              <div class="flex items-center justify-between text-[11px] leading-none mb-0.5">
                 <span class="font-medium truncate min-w-0 mr-2">{{ task.name }}</span>
                 <div class="flex items-center gap-2 shrink-0">
                   <span class="text-muted-foreground tabular-nums">{{ Math.round(task.avgLatency) }} ms</span>
@@ -494,20 +494,47 @@ function hasRegion(region: string | null | undefined): boolean {
                   <span class="text-muted-foreground tabular-nums">{{ task.avgLoss.toFixed(1) }}%</span>
                 </div>
               </div>
-              <!-- 延迟微条 -->
-              <div
-                class="grid h-1.5 items-end gap-[1px] px-2 pb-1.5 opacity-80 group-hover/panel:opacity-100"
-                :style="{ gridTemplateColumns: `repeat(${task.latencyBars.length}, minmax(0, 1fr))` }"
-              >
-                <DataTooltip
-                  v-for="bar in task.latencyBars" :key="bar.key"
-                  placement="top" :content="bar.tooltip" class="h-full w-full"
+              <!-- 延迟条 -->
+              <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                <span class="text-[9px] text-muted-foreground/50 w-4 shrink-0">L</span>
+                <div
+                  class="grid h-1.5 flex-1 items-end gap-[1px] transition-all hover:h-2.5"
+                  :style="{ gridTemplateColumns: `repeat(${task.latencyBars.length}, minmax(0, 1fr))` }"
                 >
                   <span
-                    class="block h-full w-full rounded-[1px]"
-                    :class="bar.className"
-                  />
-                </DataTooltip>
+                    v-for="bar in task.latencyBars"
+                    :key="bar.key"
+                    :title="bar.tooltip"
+                    :aria-label="bar.tooltip"
+                    class="h-full w-full"
+                  >
+                    <span
+                      class="block h-full w-full rounded-[1px] transition-all group-hover:opacity-50 hover:scale-y-160 hover:opacity-100"
+                      :class="bar.className"
+                    />
+                  </span>
+                </div>
+              </div>
+              <!-- 丢包条 -->
+              <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100">
+                <span class="text-[9px] text-muted-foreground/50 w-4 shrink-0">P</span>
+                <div
+                  class="grid h-1.5 flex-1 items-end gap-[1px] transition-all hover:h-2.5"
+                  :style="{ gridTemplateColumns: `repeat(${task.lossBars.length}, minmax(0, 1fr))` }"
+                >
+                  <span
+                    v-for="bar in task.lossBars"
+                    :key="bar.key"
+                    :title="bar.tooltip"
+                    :aria-label="bar.tooltip"
+                    class="h-full w-full"
+                  >
+                    <span
+                      class="block h-full w-full rounded-[1px] transition-all group-hover:opacity-50 hover:scale-y-160 hover:opacity-100"
+                      :class="bar.className"
+                    />
+                  </span>
+                </div>
               </div>
             </div>
 
