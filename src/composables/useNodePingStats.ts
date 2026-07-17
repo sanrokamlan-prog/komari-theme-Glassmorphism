@@ -32,6 +32,7 @@ interface MetricLossPoint {
   time: string
   value: number
   count: number
+  task_id: number
 }
 
 function normalizeMaxCount(maxCount: number | null | undefined): number | undefined {
@@ -307,6 +308,7 @@ async function loadPingMetricRecords(nodeUuid: string, hours: number, maxCount?:
             time: point.time,
             value: point.value,
             count: isFiniteNumber(point.count) && point.count > 0 ? point.count : 1,
+            task_id: taskId,
           })
           metricLossTaskIds.add(taskId)
         }
@@ -742,8 +744,106 @@ export function useNodePingStats(
       persistStats(nodeUuid, hours, maxCount, value)
   })
 
+  const perTaskStats = computed<Map<number, NodePingStatsState>>(() => {
+    const { uuid: nodeUuid, hours, maxCount, enabled } = resolved.value
+    if (!enabled || !nodeUuid.trim())
+      return new Map()
+
+    const entry = getSharedPingRecordsEntry(hours, maxCount, nodeUuid)
+    const state = entry.data.value
+    if (!state)
+      return new Map()
+
+    const records = state.recordsByClient.get(nodeUuid) ?? []
+    const statsWithSamples = (state.metricStats ?? []).filter(s => s.entity_id === nodeUuid && s.total > 0)
+
+    if (statsWithSamples.length) {
+      const result = new Map<number, NodePingStatsState>()
+      for (const stat of statsWithSamples) {
+        const taskId = normalizeTaskId(stat.task_id)
+        if (!Number.isFinite(taskId))
+          continue
+
+        const taskRecords = records.filter(r => r.task_id === taskId && r.value >= 0)
+        const taskLossPoints = state.metricLossPoints?.filter(lp => lp.task_id === taskId) ?? []
+        const history = buildPingHistory(taskRecords, taskLossPoints.length ? taskLossPoints : undefined)
+
+        result.set(taskId, {
+          avgLatency: isFiniteNumber(stat.avg) ? stat.avg : (taskRecords.length ? average(taskRecords.map(r => r.value)) : 0),
+          avgLoss: isFiniteNumber(stat.loss) ? stat.loss : 0,
+          avgVolatility: isFiniteNumber(stat.p99_p50_ratio) ? stat.p99_p50_ratio : 0,
+          history,
+          hasData: true,
+        })
+      }
+      return result
+    }
+
+    // Legacy path: per-task from records
+    const taskMap = new Map<number, PingRecord[]>()
+    for (const rec of records) {
+      const list = taskMap.get(rec.task_id) ?? []
+      list.push(rec)
+      taskMap.set(rec.task_id, list)
+    }
+
+    const result = new Map<number, NodePingStatsState>()
+    for (const [taskId, taskRecords] of taskMap) {
+      const history = buildPingHistory(taskRecords)
+      const validValues = taskRecords.filter(r => r.value >= 0).map(r => r.value)
+      const lostCount = taskRecords.filter(r => r.value < 0).length
+      const loss = taskRecords.length ? (lostCount / taskRecords.length) * 100 : 0
+
+      result.set(taskId, {
+        avgLatency: validValues.length ? average(validValues) : 0,
+        avgLoss: loss,
+        avgVolatility: 0,
+        history,
+        hasData: history.length > 0 || validValues.length > 0,
+      })
+    }
+    return result
+  })
+
+  const taskInfoList = computed<Array<{ taskId: number, name: string }>>(() => {
+    const { uuid: nodeUuid } = resolved.value
+    const entry = getSharedPingRecordsEntry(
+      resolved.value.hours,
+      resolved.value.maxCount,
+      nodeUuid,
+    )
+    const state = entry.data.value
+    if (!state)
+      return []
+
+    // Metric path: use metricStats names
+    const nodeStats = (state.metricStats ?? []).filter(s => s.entity_id === nodeUuid && s.total > 0)
+    if (nodeStats.length) {
+      return nodeStats
+        .map(s => ({
+          taskId: normalizeTaskId(s.task_id),
+          name: s.name?.trim() || pingTaskName(s) || `Task ${s.task_id}`,
+        }))
+        .filter(t => Number.isFinite(t.taskId))
+    }
+
+    // Legacy path: extract task IDs from records
+    const records = state.recordsByClient.get(nodeUuid) ?? []
+    const seen = new Set<number>()
+    const result: Array<{ taskId: number, name: string }> = []
+    for (const rec of records) {
+      if (!seen.has(rec.task_id)) {
+        seen.add(rec.task_id)
+        result.push({ taskId: rec.task_id, name: `Task ${rec.task_id}` })
+      }
+    }
+    return result
+  })
+
   return {
     stats,
+    perTaskStats,
+    taskInfoList,
     loading,
     error,
     history: computed(() => stats.value.history),

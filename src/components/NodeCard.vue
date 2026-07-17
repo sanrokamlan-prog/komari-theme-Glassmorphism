@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { NodeData } from '@/stores/nodes'
 import { Icon } from '@iconify/vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { CardX } from '@/components/ui/card-x'
 import { DataTooltip } from '@/components/ui/data-tooltip'
 import { ProgressThin } from '@/components/ui/progress-thin'
-import { useNodePingDisplay } from '@/composables/useNodePingDisplay'
+import { useNodePingDisplay, getLatencyToneClass, getLossToneClass } from '@/composables/useNodePingDisplay'
+import { useNodePingStats } from '@/composables/useNodePingStats'
 import { useAppStore } from '@/stores/app'
 import { formatBytesPerSecondWithConfig, formatBytesWithConfig, formatDateTime, getStatus, getUptimeDays } from '@/utils/helper'
 import { getDiskPercentage, getMemoryPercentage, getTrafficUsed, getTrafficUsedPercentage, hasTrafficLimit } from '@/utils/nodeMetricsHelper'
@@ -67,14 +68,96 @@ const swapTooltip = computed(() => {
 const diskPercentage = computed(() => getDiskPercentage(props.node))
 const diskStatus = computed(() => getStatus(diskPercentage.value))
 
-const {
-  latencyRenderBars,
-  lossRenderBars,
-  latencyDisplay,
-  lossDisplay,
-  latencyPanelTooltip,
-  lossPanelTooltip,
-} = useNodePingDisplay(() => props.node.uuid)
+const pingStatsEnabled = computed(() => {
+  if (appStore.publicSettings?.record_enabled === false)
+    return false
+  return appStore.publicSettings?.ping_record_preserve_time !== 0
+})
+const pingStatsHours = computed(() => {
+  const preserveTime = appStore.publicSettings?.ping_record_preserve_time
+  if (typeof preserveTime === 'number' && preserveTime > 0)
+    return Math.min(preserveTime, 1)
+  return 1
+})
+
+// 保留合并显示用于兼容（列表页等），单任务用 perTask
+const combinedPingDisplay = useNodePingDisplay(() => props.node.uuid)
+const nodePingStats = useNodePingStats(() => props.node.uuid, {
+  hours: pingStatsHours,
+  enabled: pingStatsEnabled,
+})
+
+/** 展开超过 3 个任务的额外行 */
+const expandedPingTasks = ref(false)
+const MAX_VISIBLE_PING_TASKS = 3
+
+interface TaskDisplayInfo {
+  taskId: number
+  name: string
+  avgLatency: number
+  avgLoss: number
+  latencyBars: Array<{ key: string, className: string, tooltip: string }>
+  lossBars: Array<{ key: string, className: string, tooltip: string }>
+  hasData: boolean
+}
+
+const taskPingDisplays = computed<TaskDisplayInfo[]>(() => {
+  const perTask = nodePingStats.perTaskStats.value
+  const taskList = nodePingStats.taskInfoList.value
+  if (!perTask.size || !taskList.length)
+    return []
+
+  return taskList.map((info) => {
+    const stats = perTask.get(info.taskId)
+    if (!stats)
+      return null
+
+    const history = stats.history
+    const latencyBars = history.length
+      ? history.map((point, i) => ({
+          key: `lat-${info.taskId}-${i}`,
+          className: point.latency === null ? 'bg-muted-foreground/15' : getLatencyToneClass(point.latency),
+          tooltip: point.latency === null ? `${new Date(point.time).toLocaleTimeString()}\n无采样数据` : `${new Date(point.time).toLocaleTimeString()}\n${Math.round(point.latency)} ms`,
+        }))
+      : Array.from({ length: 20 }, (_, i) => ({
+          key: `lat-empty-${info.taskId}-${i}`,
+          className: 'bg-muted-foreground/10',
+          tooltip: '无采样数据',
+        }))
+
+    const lossBars = history.length
+      ? history.map((point, i) => ({
+          key: `loss-${info.taskId}-${i}`,
+          className: point.loss === null ? 'bg-muted-foreground/15' : getLossToneClass(point.loss),
+          tooltip: point.loss === null ? `${new Date(point.time).toLocaleTimeString()}\n无采样数据` : `${new Date(point.time).toLocaleTimeString()}\n${point.loss.toFixed(1)}%`,
+        }))
+      : Array.from({ length: 20 }, (_, i) => ({
+          key: `loss-empty-${info.taskId}-${i}`,
+          className: 'bg-muted-foreground/10',
+          tooltip: '无采样数据',
+        }))
+
+    return {
+      taskId: info.taskId,
+      name: info.name,
+      avgLatency: stats.avgLatency,
+      avgLoss: stats.avgLoss,
+      latencyBars,
+      lossBars,
+      hasData: stats.hasData,
+    }
+  }).filter((d): d is TaskDisplayInfo => d !== null)
+})
+
+const visiblePingDisplays = computed(() => {
+  if (expandedPingTasks.value)
+    return taskPingDisplays.value
+  return taskPingDisplays.value.slice(0, MAX_VISIBLE_PING_TASKS)
+})
+
+const collapsedCount = computed(() =>
+  Math.max(0, taskPingDisplays.value.length - MAX_VISIBLE_PING_TASKS),
+)
 
 const trafficUsedPercentage = computed(() => getTrafficUsedPercentage(props.node))
 const trafficUsed = computed(() => getTrafficUsed(props.node))
@@ -393,26 +476,74 @@ function hasRegion(region: string | null | undefined): boolean {
           </div>
         </div>
 
-        <!-- 延迟 + 丢包 -->
-        <div class="grid grid-cols-2 gap-1.5">
+        <!-- 延迟 + 丢包：分任务显示 -->
+        <template v-if="taskPingDisplays.length > 0">
+          <div class="flex flex-col gap-2">
+            <div
+              v-for="task in visiblePingDisplays"
+              :key="task.taskId"
+              class="rounded-lg bg-slate-500/5 overflow-hidden"
+              :class="[!props.node.online ? 'blur-xs opacity-50' : '']"
+            >
+              <!-- 任务头部：名称 + 数值摘要 -->
+              <div class="flex items-center justify-between px-2 pt-1.5 pb-0.5 text-[11px] leading-none">
+                <span class="font-medium truncate min-w-0 mr-2">{{ task.name }}</span>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="text-muted-foreground tabular-nums">{{ Math.round(task.avgLatency) }} ms</span>
+                  <span class="text-muted-foreground/60">·</span>
+                  <span class="text-muted-foreground tabular-nums">{{ task.avgLoss.toFixed(1) }}%</span>
+                </div>
+              </div>
+              <!-- 延迟微条 -->
+              <div
+                class="grid h-1.5 items-end gap-[1px] px-2 pb-1.5 opacity-80 group-hover/panel:opacity-100"
+                :style="{ gridTemplateColumns: `repeat(${task.latencyBars.length}, minmax(0, 1fr))` }"
+              >
+                <DataTooltip
+                  v-for="bar in task.latencyBars" :key="bar.key"
+                  placement="top" :content="bar.tooltip" class="h-full w-full"
+                >
+                  <span
+                    class="block h-full w-full rounded-[1px]"
+                    :class="bar.className"
+                  />
+                </DataTooltip>
+              </div>
+            </div>
+
+            <!-- 折叠展开按钮 -->
+            <button
+              v-if="collapsedCount > 0"
+              type="button"
+              class="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+              @click.stop="expandedPingTasks = !expandedPingTasks"
+            >
+              <template v-if="expandedPingTasks">收起</template>
+              <template v-else>还有 {{ collapsedCount }} 条延迟线路 · 展开</template>
+            </button>
+          </div>
+        </template>
+
+        <!-- 无 ping 数据时：传统合并占位（或隐藏） -->
+        <div v-else class="grid grid-cols-2 gap-1.5">
           <button
             type="button"
             class="group/panel relative flex flex-col rounded-lg bg-slate-500/5"
             :class="[nodeCardPingPanelClass, nodeCardPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
-            :title="latencyPanelTooltip"
+            :title="combinedPingDisplay.latencyPanelTooltip.value"
             :aria-label="`${props.node.name} 延迟监测`"
             @click.stop="emit('pingClick')"
           >
             <div class="flex items-center justify-between text-[11px] leading-none">
               <span class="text-muted-foreground">延迟</span>
-              <span class="font-medium">{{ latencyDisplay }}</span>
+              <span class="font-medium">{{ combinedPingDisplay.latencyDisplay.value }}</span>
             </div>
             <div
               class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
-              :style="{ gridTemplateColumns: `repeat(${latencyRenderBars.length}, minmax(0, 1fr))` }"
+              :style="{ gridTemplateColumns: `repeat(${combinedPingDisplay.latencyRenderBars.value.length}, minmax(0, 1fr))` }"
             >
               <DataTooltip
-                v-for="bar in latencyRenderBars" :key="bar.key"
+                v-for="bar in combinedPingDisplay.latencyRenderBars.value" :key="bar.key"
                 placement="top" :content="bar.tooltip" class="h-full w-full"
               >
                 <span
@@ -427,20 +558,20 @@ function hasRegion(region: string | null | undefined): boolean {
             type="button"
             class="group/panel relative flex flex-col rounded-lg bg-slate-500/5"
             :class="[nodeCardPingPanelClass, nodeCardPanelClass, !props.node.online ? 'blur-xs opacity-50' : '']"
-            :title="lossPanelTooltip"
+            :title="combinedPingDisplay.lossPanelTooltip.value"
             :aria-label="`${props.node.name} 丢包监测`"
             @click.stop="emit('pingClick')"
           >
             <div class="flex items-center justify-between text-[11px] leading-none">
               <span class="text-muted-foreground">丢包</span>
-              <span class="font-medium">{{ lossDisplay }}</span>
+              <span class="font-medium">{{ combinedPingDisplay.lossDisplay.value }}</span>
             </div>
             <div
               class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
-              :style="{ gridTemplateColumns: `repeat(${lossRenderBars.length}, minmax(0, 1fr))` }"
+              :style="{ gridTemplateColumns: `repeat(${combinedPingDisplay.lossRenderBars.value.length}, minmax(0, 1fr))` }"
             >
               <DataTooltip
-                v-for="bar in lossRenderBars" :key="bar.key"
+                v-for="bar in combinedPingDisplay.lossRenderBars.value" :key="bar.key"
                 placement="top" :content="bar.tooltip" class="h-full w-full"
               >
                 <span

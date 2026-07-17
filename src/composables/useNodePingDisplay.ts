@@ -21,7 +21,7 @@ interface UseNodePingDisplayOptions {
 
 const EMPTY_PING_BAR_COUNT = 20
 
-function getLatencyToneClass(latency: number): string {
+export function getLatencyToneClass(latency: number): string {
   if (latency <= 60)
     return 'bg-signal-1'
   if (latency <= 100)
@@ -33,7 +33,7 @@ function getLatencyToneClass(latency: number): string {
   return 'bg-signal-5 ping-signal-pattern-4'
 }
 
-function getLossToneClass(loss: number): string {
+export function getLossToneClass(loss: number): string {
   if (loss <= 1)
     return 'bg-signal-1'
   if (loss <= 3)
