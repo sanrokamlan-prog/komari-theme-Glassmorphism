@@ -5,7 +5,7 @@ import { computed, onScopeDispose, ref, shallowRef, toValue, watch } from 'vue'
 import { PING_RECORD_MAX_COUNT } from '@/constants/load'
 import { abortPingRecords, loadPingRecords } from '@/services/history.service'
 import { loadPingMetricStats, queryMetrics } from '@/services/metrics.service'
-import { isPingMetric, normalizeMetricSeriesList, PING_LATENCY_METRIC, PING_LOSS_METRIC, pingTaskId } from '@/utils/metricSeries'
+import { isPingMetric, normalizeMetricSeriesList, PING_LATENCY_METRIC, PING_LOSS_METRIC, pingTaskId, pingTaskName } from '@/utils/metricSeries'
 
 export interface NodePingHistoryPoint {
   time: string
