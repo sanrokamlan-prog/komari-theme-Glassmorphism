@@ -116,6 +116,22 @@ jobs:
         if: steps.version.outputs.version_changed == 'true' || steps.tag.outputs.exists == 'false'
         run: bun run build
 
+      - name: Package build artifact
+        if: steps.version.outputs.version_changed == 'true' || steps.tag.outputs.exists == 'false'
+        env:
+          SHA_SHORT: ${{ github.sha }}
+        run: |
+          SHA7="${SHA_SHORT:0:7}"
+          ZIP_NAME="komari-theme-Glassmorphism-build-${SHA7}.zip"
+          echo "Creating ${ZIP_NAME}..."
+          cp komari-theme.json dist/
+          cp preview.png dist/ 2>/dev/null || true
+          cd dist
+          zip -r "../${ZIP_NAME}" .
+          cd ..
+          ls -lh "${ZIP_NAME}"
+          echo "artifact_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Create and push release tag
         if: (steps.version.outputs.version_changed == 'true' || steps.tag.outputs.exists == 'false') && steps.tag.outputs.exists == 'false'
         env:
