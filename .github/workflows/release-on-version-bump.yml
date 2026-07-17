@@ -5,16 +5,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release 版本号（如 3.2.0），不填则读取 komari-theme.json'
-        required: false
-        type: string
-      force:
-        description: '强制覆盖已存在的 tag（非首次发布慎用）'
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -45,36 +35,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Override version from workflow_dispatch input
-        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          node <<'NODE'
-          const { readFileSync, writeFileSync } = require('node:fs')
-          const path = 'komari-theme.json'
-          const content = readFileSync(path, 'utf8')
-          const ver = process.env.INPUT_VERSION.trim()
-          const versionRe = /^\d+\.\d+\.\d+(?:[-+][0-9A-Z.-]+)?$/i
-          if (!versionRe.test(ver)) {
-            console.error(`Invalid version: ${ver}`)
-            process.exit(1)
-          }
-          const next = content.replace(
-            /(^\s*"version"\s*:\s*")[^"]*(")/m,
-            `$1${ver}$2`
-          )
-          writeFileSync(path, next)
-          console.log(`Version overridden to ${ver}`)
-          // Commit the version change
-          require('node:child_process').execFileSync('git', ['add', path])
-          require('node:child_process').execFileSync('git', ['commit', '-m', `chore: bump version to ${ver} [workflow_dispatch]`])
-          NODE
-
       - name: Detect theme version
         id: version
         env:
-          BEFORE_SHA: ${{ github.event_name == 'workflow_dispatch' && '' || github.event.before }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           node <<'NODE' >> "$GITHUB_OUTPUT"
           const { execFileSync } = require('node:child_process')
@@ -125,20 +89,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.version.outputs.release_tag }}
           CURRENT_SHA: ${{ github.sha }}
-          FORCE: ${{ inputs.force == true && 'true' || 'false' }}
         run: |
           git fetch --force --tags
 
-          if [ "${FORCE}" = "true" ]; then
-            # Force mode: delete the tag if it exists remotely
-            if git rev-parse "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-              echo "Force mode: deleting existing tag ${RELEASE_TAG}"
-              git tag -d "${RELEASE_TAG}"
-              git push origin ":refs/tags/${RELEASE_TAG}" || true
-            fi
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "current=false" >> "$GITHUB_OUTPUT"
-          elif git rev-parse "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+          if git rev-parse "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
             tag_sha="$(git rev-list -n 1 "${RELEASE_TAG}")"
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "sha=${tag_sha}" >> "$GITHUB_OUTPUT"
@@ -146,17 +100,17 @@ jobs:
               echo "current=true" >> "$GITHUB_OUTPUT"
             else
               echo "current=false" >> "$GITHUB_OUTPUT"
-              echo "Tag ${RELEASE_TAG} already exists on ${tag_sha}, not on ${CURRENT_SHA}. Assuming the release was handled manually and skipping automation."
+              echo "Tag ${RELEASE_TAG} already exists on ${tag_sha}, not on ${CURRENT_SHA}. Skipping."
             fi
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "current=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Skip when version is unchanged and release tag exists
+      - name: Skip when version unchanged and tag exists
         if: steps.version.outputs.version_changed != 'true' && steps.tag.outputs.exists == 'true'
         run: |
-          echo "komari-theme.json version has not changed and ${{ steps.version.outputs.release_tag }} already exists. Skipping release."
+          echo "Version unchanged and tag exists. Skipping release."
 
       - name: Build project
         if: steps.version.outputs.version_changed == 'true' || steps.tag.outputs.exists == 'false'
@@ -171,11 +125,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
           git push origin "${RELEASE_TAG}"
-
-      - name: Skip when release tag was handled manually
-        if: (steps.version.outputs.version_changed == 'true' || steps.tag.outputs.exists == 'false') && steps.tag.outputs.exists == 'true' && steps.tag.outputs.current == 'false'
-        run: |
-          echo "${{ steps.version.outputs.release_tag }} already exists on ${{ steps.tag.outputs.sha }}. Skipping release creation."
 
       - name: Create or update GitHub release
         if: (steps.version.outputs.version_changed == 'true' || steps.tag.outputs.exists == 'false') && (steps.tag.outputs.exists == 'false' || steps.tag.outputs.current == 'true')
