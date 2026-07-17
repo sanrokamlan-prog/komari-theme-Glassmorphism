@@ -244,6 +244,12 @@ html.color-vision-friendly.dark {
   --signal-5: #f28e5b;
 }
 
+.bg-signal-1 { background-color: var(--color-signal-1); }
+.bg-signal-2 { background-color: var(--color-signal-2); }
+.bg-signal-3 { background-color: var(--color-signal-3); }
+.bg-signal-4 { background-color: var(--color-signal-4); }
+.bg-signal-5 { background-color: var(--color-signal-5); }
+
 html.color-vision-friendly .ping-signal-pattern-2 {
   background-image: repeating-linear-gradient(135deg, transparent 0 2px, rgb(255 255 255 / 0.45) 2px 3px);
 }
