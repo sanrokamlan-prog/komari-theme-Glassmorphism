@@ -102,8 +102,8 @@ html = html.replace(charsetMarker, `${charsetMarker}${bridge}`)
 // The official PWA only controls /admin-app/, while the bridge restores /admin and
 // /terminal before React boots. Keeping that worker adds stale-cache risk without
 // providing working offline navigation for the real routes.
-html = html.replace(pwaManifestPattern, '').replace(pwaRegisterPattern, '')
-for (const filename of ['manifest.webmanifest', 'registerSW.js', 'sw.js'])
+html = html.replace(pwaRegisterPattern, '')
+for (const filename of ['registerSW.js', 'sw.js'])
   rmSync(resolve(targetDir, filename), { force: true })
 for (const filename of readdirSync(targetDir).filter(filename => workboxFilenamePattern.test(filename)))
   rmSync(resolve(targetDir, filename), { force: true })
