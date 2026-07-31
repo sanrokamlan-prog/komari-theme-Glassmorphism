@@ -454,7 +454,7 @@ function hasRegion(region: string | null | undefined): boolean {
               <span class="font-medium">{{ latencyDisplay }}</span>
             </div>
             <div
-              class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
+              class="grid h-full w-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
               :style="{ gridTemplateColumns: `repeat(${latencyRenderBars.length}, minmax(0, 1fr))` }"
             >
               <DataTooltip
@@ -482,7 +482,7 @@ function hasRegion(region: string | null | undefined): boolean {
               <span class="font-medium">{{ lossDisplay }}</span>
             </div>
             <div
-              class="grid h-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
+              class="grid h-full w-full items-end gap-[1px] opacity-80 group-hover/panel:opacity-100"
               :style="{ gridTemplateColumns: `repeat(${lossRenderBars.length}, minmax(0, 1fr))` }"
             >
               <DataTooltip
