@@ -12,6 +12,7 @@ import { computed, ref, watch } from 'vue'
 import { AppDialog } from '@/components/ui/app-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import * as financeHelper from '@/utils/financeHelper'
 import { formatPriceWithCycle, getDaysUntilExpired, getExpireStatus, isFreeNode, isFreePrice } from '@/utils/tagHelper'
@@ -80,6 +81,10 @@ const trafficModeLabels: Record<MeteredTrafficMode, string> = {
   up: '仅上行',
   down: '仅下行',
 }
+
+const currencyOptions = financeHelper.SUPPORTED_CURRENCIES.map(item => ({ value: item, label: item }))
+const trafficModeOptions = Object.entries(trafficModeLabels).map(([value, label]) => ({ value, label }))
+const visibleNodeOptions = computed(() => visibleNodes.value.map(node => ({ value: node.uuid, label: node.name })))
 
 function toCNY(amount: number, currencyValue: string): number | null {
   const currency = financeHelper.normalizeCurrency(currencyValue)
@@ -167,8 +172,8 @@ watch(() => props.open, (open) => {
   }]))
 }, { immediate: true })
 
-function handleCurrencyChange(event: Event) {
-  emit('update:currency', (event.target as HTMLSelectElement).value as CurrencyCode)
+function handleCurrencyChange(value: string) {
+  emit('update:currency', value as CurrencyCode)
 }
 
 function handleRateChange(currency: CurrencyCode, rawValue: string | number) {
@@ -177,13 +182,13 @@ function handleRateChange(currency: CurrencyCode, rawValue: string | number) {
     emit('update:rate', currency, value)
 }
 
-function handleMeteredCurrencyChange(event: Event) {
-  meteredSettings.value.currency = (event.target as HTMLSelectElement).value as CurrencyCode
+function handleMeteredCurrencyChange(value: string) {
+  meteredSettings.value.currency = value as CurrencyCode
   persistMeteredSettings()
 }
 
-function handleTrafficModeChange(event: Event) {
-  meteredSettings.value.trafficMode = (event.target as HTMLSelectElement).value as MeteredTrafficMode
+function handleTrafficModeChange(value: string) {
+  meteredSettings.value.trafficMode = value as MeteredTrafficMode
   persistMeteredSettings()
 }
 
@@ -197,8 +202,8 @@ function handleMeteredNumberUpdate(key: 'trafficRate' | 'timeRate' | 'manualHour
   persistMeteredSettings()
 }
 
-function handleSelectedNodeChange(event: Event) {
-  selectedNodeUuid.value = (event.target as HTMLSelectElement).value
+function handleSelectedNodeChange(value: string) {
+  selectedNodeUuid.value = value
   meteredSettings.value = financeHelper.getStoredMeteredEstimateSettings(selectedNodeUuid.value)
 }
 
@@ -312,16 +317,13 @@ function formatTraffic(tib: number): string {
                 沿用 Komari 原生价格、周期和到期时间。
               </p>
             </div>
-            <select
-              :value="currency"
+            <Select
+              :model-value="currency"
+              :options="currencyOptions"
               aria-label="显示币种"
-              class="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-              @change="handleCurrencyChange"
-            >
-              <option v-for="item in financeHelper.SUPPORTED_CURRENCIES" :key="item" :value="item">
-                {{ item }}
-              </option>
-            </select>
+              class="h-8 w-24 px-2 text-xs"
+              @update:model-value="handleCurrencyChange"
+            />
           </div>
 
           <div class="overflow-x-auto rounded-md border border-border/60">
@@ -383,45 +385,42 @@ function formatTraffic(tib: number): string {
           <div class="flex flex-wrap items-end gap-3">
             <label class="min-w-44 flex-1 space-y-1 text-xs">
               <span class="font-medium">估算节点</span>
-              <select
-                :value="selectedNodeUuid"
+              <Select
+                :model-value="selectedNodeUuid"
+                :options="visibleNodeOptions"
                 aria-label="估算节点"
-                class="h-9 w-full rounded-md border border-input bg-background px-2 outline-none focus:ring-2 focus:ring-ring"
-                @change="handleSelectedNodeChange"
-              >
-                <option v-for="node in visibleNodes" :key="node.uuid" :value="node.uuid">{{ node.name }}</option>
-              </select>
+                class="w-full"
+                content-class="max-w-80"
+                @update:model-value="handleSelectedNodeChange"
+              />
             </label>
             <label class="space-y-1 text-xs">
               <span class="font-medium">流量口径</span>
-              <select
-                :value="meteredSettings.trafficMode"
-                class="h-9 w-full rounded-md border border-input bg-background px-2 outline-none focus:ring-2 focus:ring-ring"
-                @change="handleTrafficModeChange"
-              >
-                <option v-for="(label, key) in trafficModeLabels" :key="key" :value="key">{{ label }}</option>
-              </select>
+              <Select
+                :model-value="meteredSettings.trafficMode"
+                :options="trafficModeOptions"
+                class="w-full"
+                @update:model-value="handleTrafficModeChange"
+              />
             </label>
             <label class="space-y-1 text-xs">
               <span class="font-medium">计价币种</span>
-              <select
-                :value="meteredSettings.currency"
-                class="h-9 w-full rounded-md border border-input bg-background px-2 outline-none focus:ring-2 focus:ring-ring"
-                @change="handleMeteredCurrencyChange"
-              >
-                <option v-for="item in financeHelper.SUPPORTED_CURRENCIES" :key="item" :value="item">{{ item }}</option>
-              </select>
+              <Select
+                :model-value="meteredSettings.currency"
+                :options="currencyOptions"
+                class="w-full"
+                @update:model-value="handleMeteredCurrencyChange"
+              />
             </label>
             <label class="space-y-1 text-xs">
               <span class="font-medium">显示币种</span>
-              <select
-                :value="currency"
+              <Select
+                :model-value="currency"
+                :options="currencyOptions"
                 aria-label="估算显示币种"
-                class="h-9 w-full rounded-md border border-input bg-background px-2 outline-none focus:ring-2 focus:ring-ring"
-                @change="handleCurrencyChange"
-              >
-                <option v-for="item in financeHelper.SUPPORTED_CURRENCIES" :key="item" :value="item">{{ item }}</option>
-              </select>
+                class="w-full"
+                @update:model-value="handleCurrencyChange"
+              />
             </label>
           </div>
 
@@ -513,16 +512,13 @@ function formatTraffic(tib: number): string {
                 {{ sourceLabels[source] }} · {{ formatRateUpdatedAt() }} · 1 CNY 对应数值
               </p>
             </div>
-            <select
-              :value="currency"
+            <Select
+              :model-value="currency"
+              :options="currencyOptions"
               aria-label="显示币种"
-              class="h-8 rounded-md border border-input bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-              @change="handleCurrencyChange"
-            >
-              <option v-for="item in financeHelper.SUPPORTED_CURRENCIES" :key="item" :value="item">
-                {{ item }}
-              </option>
-            </select>
+              class="h-8 w-24 px-2 text-xs"
+              @update:model-value="handleCurrencyChange"
+            />
             <Button type="button" size="sm" variant="outline" class="h-8 gap-1.5" @click="emit('resetRates')">
               <Icon icon="tabler:refresh" width="14" height="14" />恢复今日汇率
             </Button>

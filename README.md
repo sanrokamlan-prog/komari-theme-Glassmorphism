@@ -37,7 +37,7 @@
 
 | 项目     | 说明                                                      |
 | :------- | :-------------------------------------------------------- |
-| 当前版本 | **v3.3.7**                                                |
+| 当前版本 | **v3.3.8**                                                |
 | 主题定位 | Komari Monitor 可导入 zip 主题，不是普通 Web App 部署包   |
 | 视觉风格 | 毛玻璃卡片、动态背景、浅色 / 深色 / 北京时间自动日夜模式  |
 | 数据能力 | Metric Store 优先，旧接口自动 fallback，兼容 Komari 1.2.x |
@@ -45,6 +45,15 @@
 | 发布产物 | `komari-theme-Glassmorphism-build-<short-sha>.zip`        |
 
 > 好看只是外壳。v3 真正的重点，是把 Metric、Ping、流量、费用、健康分析和运维工具整合成日常真的会打开来看的监控面板。
+
+---
+
+## 🎨 v3.3.8 暗色模式下拉弹层修复
+
+- 详情页节点切换器改用主题 Select，暗色模式下弹层使用 Popover 色彩、边框和毛玻璃样式
+- 财务详情中的币种、估算节点和流量口径选择器统一使用同一套可控下拉组件
+- 保留键盘导航、滚动选项列表、节点切换和本地估算参数持久化行为
+- 修复 Issue [#56](https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism/issues/56)
 
 ---
 
@@ -512,6 +521,15 @@ dist/
 ## 📝 更新日志
 
 <details open>
+<summary><strong>v3.3.8 · 暗色模式下拉弹层修复</strong></summary>
+
+- 详情页节点切换器和财务详情选择器不再使用浏览器原生 `<select>` 弹层
+- 新增基于 reka-ui 的主题 Select，支持键盘操作、滚动选项和暗色毛玻璃 Popover
+- 修复 [Issue #56](https://github.com/sanrokamlan-prog/komari-theme-Glassmorphism/issues/56)
+
+</details>
+
+<details>
 <summary><strong>v3.3.6 · 平铺地图总览卡片修复</strong></summary>
 
 - 平铺地图不再覆盖用户选择的首页总览卡片方案

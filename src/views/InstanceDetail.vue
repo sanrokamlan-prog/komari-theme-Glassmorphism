@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { CardX } from '@/components/ui/card-x'
 import { DataTooltip } from '@/components/ui/data-tooltip'
 import { Empty } from '@/components/ui/empty'
+import { Select } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useNodeProviderMetadata } from '@/composables/useNodeProviderMetadata'
 import { LOAD_RECORD_MAX_COUNT } from '@/constants/load'
@@ -42,6 +43,7 @@ const peakNetIn = ref(0)
 const activeDetailSection = ref<'overview' | 'load' | 'ping'>('overview')
 const data = computed(() => nodesStore.visibleNodesByUuid.get(String(route.params.id)))
 const detailNodes = computed(() => nodesStore.visibleNodes)
+const detailNodeOptions = computed(() => detailNodes.value.map(node => ({ value: node.uuid, label: node.name })))
 const detailNodeIndex = computed(() => detailNodes.value.findIndex(node => node.uuid === data.value?.uuid))
 const isFavoriteNode = computed(() => data.value ? appStore.isFavoriteNode(data.value.uuid) : false)
 
@@ -135,8 +137,7 @@ function navigateDetailNode(offset: number): void {
     void router.push({ name: 'instance-detail', params: { id: target.uuid } })
 }
 
-function selectDetailNode(event: Event): void {
-  const uuid = (event.target as HTMLSelectElement).value
+function selectDetailNode(uuid: string): void {
   if (uuid && uuid !== data.value?.uuid)
     void router.push({ name: 'instance-detail', params: { id: uuid } })
 }
@@ -530,16 +531,14 @@ const metricCards = computed<MetricCard[]>(() => appStore.detailMetricCardOrder.
           >
             <Icon icon="tabler:chevron-left" :width="14" :height="14" />
           </Button>
-          <select
-            :value="data.uuid"
-            class="h-7 max-w-34 rounded-sm border-0 bg-transparent px-1 text-xs text-foreground outline-none sm:max-w-48"
+          <Select
+            :model-value="data.uuid"
+            :options="detailNodeOptions"
             aria-label="切换节点"
-            @change="selectDetailNode"
-          >
-            <option v-for="node in detailNodes" :key="node.uuid" :value="node.uuid">
-              {{ node.name }}
-            </option>
-          </select>
+            class="h-7 max-w-34 rounded-sm border-0 bg-transparent px-1 text-xs shadow-none sm:max-w-48"
+            content-class="max-w-72"
+            @update:model-value="selectDetailNode"
+          />
           <Button
             variant="ghost" size="icon-sm" class="size-7 rounded-sm shadow-none"
             :disabled="detailNodes.length < 2"
