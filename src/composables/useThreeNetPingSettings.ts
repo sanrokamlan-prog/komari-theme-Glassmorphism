@@ -32,6 +32,8 @@ export function useThreeNetPingSettings() {
   const filteredNodes = computed(() => visibleNodes.value.filter(node => `${node.name} ${node.uuid}`.toLowerCase().includes(nodeSearch.value.trim().toLowerCase())))
   const activeNode = computed(() => visibleNodes.value.find(node => node.uuid === activeNodeId.value))
   const activeTaskIds = computed(() => activeNodeId.value === 'global' ? globalIds.value : bindings.value[activeNodeId.value] ?? [])
+  // Keep stale selections removable independently of catalog loading and search.
+  const unavailableTaskIds = computed(() => activeTaskIds.value.filter(id => !tasks.value.some(task => task.id === id)))
   const activeNodeName = computed(() => activeNodeId.value === 'global' ? '全局任务' : activeNode.value?.name)
   const filteredTasks = computed(() => tasks.value.filter(task => `${task.id} ${task.name}`.toLowerCase().includes(taskSearch.value.trim().toLowerCase())))
   const configuredNodeCount = computed(() => visibleNodes.value.filter(node => bindings.value[node.uuid]?.length).length)
@@ -92,5 +94,5 @@ export function useThreeNetPingSettings() {
     catch (cause) { error.value = cause instanceof Error ? cause.message : 'Ping 任务加载失败。' }
     finally { loading.value = false }
   })
-  return { tasks, loading, saving, error, nodeSearch, taskSearch, activeNodeId, bindings, dirty, pingEnabled, sparklineEnabled, visibleNodes, filteredNodes, activeNode, activeNodeName, activeTaskIds, filteredTasks, configuredNodeCount, taskName, nodeTaskSummary, toggleTask, save }
+  return { tasks, loading, saving, error, nodeSearch, taskSearch, activeNodeId, bindings, dirty, pingEnabled, sparklineEnabled, visibleNodes, filteredNodes, activeNode, activeNodeName, activeTaskIds, unavailableTaskIds, filteredTasks, configuredNodeCount, taskName, nodeTaskSummary, toggleTask, save }
 }

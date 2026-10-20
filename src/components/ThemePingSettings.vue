@@ -10,7 +10,7 @@ import { useThreeNetPingSettings } from '@/composables/useThreeNetPingSettings'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [open: boolean] }>()
-const { loading, saving, error, nodeSearch, taskSearch, activeNodeId, bindings, dirty, pingEnabled, sparklineEnabled, visibleNodes, filteredNodes, activeNodeName, activeTaskIds, filteredTasks, configuredNodeCount, nodeTaskSummary, toggleTask, save } = useThreeNetPingSettings()
+const { loading, saving, error, nodeSearch, taskSearch, activeNodeId, bindings, dirty, pingEnabled, sparklineEnabled, visibleNodes, filteredNodes, activeNodeName, activeTaskIds, unavailableTaskIds, filteredTasks, configuredNodeCount, nodeTaskSummary, toggleTask, save } = useThreeNetPingSettings()
 </script>
 
 <template>
@@ -80,6 +80,19 @@ const { loading, saving, error, nodeSearch, taskSearch, activeNodeId, bindings, 
           </Badge>
         </div>
         <Input v-model="taskSearch" class="mt-4" placeholder="搜索 Ping 任务名称或 ID" />
+        <div v-if="!loading && unavailableTaskIds.length" class="mt-4 rounded-lg border border-warning/30 bg-warning/10 p-3">
+          <p class="text-sm font-medium">
+            以下已选任务不在当前任务列表中
+          </p>
+          <p class="mt-1 text-xs text-muted-foreground">
+            任务可能已删除或暂时不可用。移除并保存可释放选择名额。
+          </p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <Button v-for="id in unavailableTaskIds" :key="id" variant="outline" size="sm" :disabled="saving" :aria-label="`移除任务 ID ${id}`" @click="toggleTask(id)">
+              移除任务 ID {{ id }}<Icon icon="tabler:x" />
+            </Button>
+          </div>
+        </div>
         <div v-if="loading" class="py-12 text-center text-sm text-muted-foreground">
           正在加载 Ping 任务…
         </div>

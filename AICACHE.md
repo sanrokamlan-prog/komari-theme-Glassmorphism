@@ -12,6 +12,15 @@
 
 ## 当前任务
 
+- 状态：in-progress，Issue #62 修复与 v3.4.3 发布（2026-10-20）。用户授权修复、发布、推送、回复及关闭 issue。
+- 范围：M4 节点 / 全局失效任务显式移除入口；M6 聚焦回归与发布核验。任务目录为空或加载失败也允许主动移除；不根据搜索结果或目录错误自动删除绑定。
+- 计划：实现 -> lint / build / 聚焦浏览器回归 -> 版本与 README -> 提交 / 推送 main -> 核对 Actions / tag / 下载包 / SHA-256 -> 回复并关闭 #62。
+- 初始 Git：HEAD 与 origin/main 均为 fa48ccd；保留用户原有 5 张 docs 预览图删除和 output/tmp。gh auth status 被自动审批策略拒绝，未读取凭据；公开 REST 可核验，Git fetch 可用。
+- 实现：节点 / 全局编辑器显式列出不在完整目录中的已选 ID，允许逐个移除；复用原 toggle / 管理员验证 / 合并保存路径。目录加载失败不自动清空，搜索不影响失效 ID 区域。
+- 本地验证：lint、类型检查 / build、聚焦浏览器配置回归 11/11 已通过；包含节点 / 全局 × 正常 / 空 / 失败目录 6 个场景，验证释放名额、空选回退和保留隐藏 / 未编辑节点。构建仅有既有 VueUse 注释和大 chunk 警告。
+- 发布 Issue 收尾：新增可复用 Resolve Released Issues 工作流，仅处理发布提交显式 `Release-Issues: #62` trailer；等待同提交三个 push 工作流全部成功，校验 tag SHA、下载 zip 的版本 / 布局 / 大小 / SHA-256 后，幂等回复并关闭指定 issue。无需读取本机 GitHub 凭据。
+- 发布工作流验证：YAML / 嵌入 JavaScript 语法和 6 个模拟场景通过（成功、检查失败不写、无 trailer 不写、digest 不符不写、tag 不符不写、重复回复去重）。本地 zip 顶层仅 manifest / preview / dist，包内版本 3.4.3。
+
 - 状态：done，towersip 三网展示与设置移植已发布 v3.4.1（2026-10-12）
 - 范围：M4 下游共享列宽 / 轻量行高 / 状态配色 / 历史浮窗；M5 独立样式开关、任务选择与按服务器编辑；M6 默认 / 三网 / 手机 / 保存权限回归。保持 compact 的实际宽度，不强制改成 comfortable；修复 Ping 统计浮窗对比度。
 - 来源：towersip a41270e460ee003e33f25091e8f3b3a950675662；保留主线请求缓存、断线、实时更新和手机轻点 / 滑动边界。按服务器设置适配为首页弹窗，保留两个公开路由；保存通过服务层验证管理员并合并最新主题设置。
@@ -723,3 +732,12 @@
 - Verified nothing was lost: all 20 non-version functional sections are present and unchanged, all 15 key links survive (including Komari PR 604/602 and komari-web PR 82, which I initially dropped and had to restore), code fences still pair evenly, and section separators are intact.
 - Chose a bullet list over a table for the history because prettier stretches table columns to the longest cell, which pushed the table to 200+ characters per line.
 - Result: 813 lines down to 432, a 47% reduction. lint passes.
+
+## 2026-10-20 Issue 62 investigation (M6; proposed fix M4)
+
+- Scope: investigate the deleted Ping task selection report; no runtime code or release changes.
+- Current public Issue #62 is open with no comments. Remote main is `fa48ccd5d6698803a698c1427d2f51cb720eff4b`, matching the inspected local HEAD.
+- Root cause: `useThreeNetPingSettings` copies saved node/global IDs without reconciling them with the task catalog. `activeTaskIds` and the three-task limit include deleted IDs, while `ThemePingSettings` renders checkboxes exclusively from the existing task catalog. Unknown IDs get a summary fallback name but no removal control. Saving parses valid positive IDs without checking catalog membership, so unrelated edits do not remove the stale binding.
+- Verification: executed the actual composable after TypeScript transpilation with mocked stores/catalog and Vue refs/computed. Saved `[30,7,10]` against catalog `[30,10,20]` gives two visible checks but 3/3 occupied, blocks adding 20, and leaves `[7]` after unchecking both visible selections. The global selector has the same blockage. No backend requests or settings writes were made.
+- Suggested repair: expose missing selected IDs with an explicit remove control for both node/global settings; allow removal even when the catalog is empty, and persist through the existing permission-checked merge service. Avoid treating catalog request failure or a search-filtered list as proof of deletion. Temporary workaround: remove only the deleted ID from the affected UUID entry in `threeNetPingNodeTaskBindings`; also inspect `threeNetPingTaskIds` if global bindings were used.
+- Validation: no lint/build run because this was a read-only runtime investigation plus handoff documentation. No GitHub comment, issue closure, commit, push or release performed.

@@ -1,0 +1,96 @@
+name: Resolve Released Issues
+
+on:
+  workflow_run:
+    workflows: [Code Quality, Visual Regression, Release On Version Bump]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+concurrency:
+  group: resolve-released-issues-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify release and resolve explicitly listed issues
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { createHash } = require('node:crypto')
+            const { execFileSync } = require('node:child_process')
+            const { mkdtempSync, writeFileSync, rmSync } = require('node:fs')
+            const { tmpdir } = require('node:os')
+            const { join } = require('node:path')
+            const repo = context.repo
+            const sha = context.payload.workflow_run.head_sha
+            const { data: commit } = await github.rest.repos.getCommit({ ...repo, ref: sha })
+            // Opt in with a commit trailer, e.g. Release-Issues: #62, #63.
+            // Ordinary issue mentions and GitHub closing keywords are not used.
+            const trailer = commit.commit.message.match(/^Release-Issues: ((?:#\d+[\s,]*)+)$/m)
+            if (!trailer) return
+            const issues = [...new Set([...trailer[1].matchAll(/#(\d+)/g)].map(match => Number(match[1])))]
+            const required = ['Code Quality', 'Visual Regression', 'Release On Version Bump']
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, { ...repo, head_sha: sha, per_page: 100 })
+            const checks = required.map(name => runs.find(run => run.name === name && run.event === 'push'))
+            if (checks.some(run => !run || run.status !== 'completed' || run.conclusion !== 'success')) {
+              core.info('Waiting for all release checks to succeed; another completion will retry.')
+              return
+            }
+            const { data: file } = await github.rest.repos.getContent({ ...repo, path: 'komari-theme.json', ref: sha })
+            const manifest = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'))
+            const tag = `v${manifest.version}`
+            const { data: release } = await github.rest.repos.getReleaseByTag({ ...repo, tag })
+            if (release.draft || release.prerelease) throw new Error('Release is not a stable public release')
+            let { data: ref } = await github.rest.git.getRef({ ...repo, ref: `tags/${tag}` })
+            let target = ref.object
+            while (target.type === 'tag') {
+              const { data: annotated } = await github.rest.git.getTag({ ...repo, tag_sha: target.sha })
+              target = annotated.object
+            }
+            if (target.type !== 'commit' || target.sha !== sha) throw new Error('Release tag does not match checked commit')
+            const asset = release.assets.find(item => item.name === `komari-theme-Glassmorphism-build-${sha.slice(0, 7)}.zip`)
+            if (!asset || !asset.digest?.startsWith('sha256:')) throw new Error('Release zip or SHA-256 digest missing')
+            const response = await fetch(asset.browser_download_url)
+            if (!response.ok) throw new Error(`Release download failed: ${response.status}`)
+            const bytes = Buffer.from(await response.arrayBuffer())
+            const digest = createHash('sha256').update(bytes).digest('hex')
+            if (bytes.length !== asset.size || asset.digest !== `sha256:${digest}`) throw new Error('Release zip digest/size mismatch')
+            const directory = mkdtempSync(join(tmpdir(), 'verified-theme-'))
+            try {
+              const archive = join(directory, 'theme.zip')
+              writeFileSync(archive, bytes)
+              const paths = execFileSync('unzip', ['-Z1', archive], { encoding: 'utf8' }).trim().split(/\r?\n/)
+              if (!paths.includes('komari-theme.json') || !paths.includes('preview.png') || !paths.includes('dist/index.html')) throw new Error('Invalid theme archive layout')
+              const packaged = JSON.parse(execFileSync('unzip', ['-p', archive, 'komari-theme.json'], { encoding: 'utf8' }))
+              if (packaged.version !== manifest.version) throw new Error('Packaged theme version mismatch')
+            } finally {
+              rmSync(directory, { recursive: true, force: true })
+            }
+            for (const issue_number of issues) {
+              const { data: issue } = await github.rest.issues.get({ ...repo, issue_number })
+              if (issue.pull_request) throw new Error('Release-Issues must refer to issues, not pull requests')
+              const marker = `<!-- verified-release:${tag}:issue-${issue_number} -->`
+              const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number, per_page: 100 })
+              if (!comments.some(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker))) {
+                const body = [
+                  `修复已随 [${tag}](${release.html_url}) 发布，请升级主题后重试。`,
+                  `本次修复：${commit.commit.message.split('\n')[0]}`,
+                  '验证结果：Code Quality、Visual Regression、Release On Version Bump 均成功；已下载发布包核对版本、目录结构及 SHA-256。',
+                  checks.map(run => `[${run.name}](${run.html_url})`).join(' · '),
+                  `主题包：\`${asset.name}\`\nSHA-256：\`${digest}\``,
+                  '感谢反馈，本 issue 按已修复关闭。如升级后仍有问题，请补充现象继续反馈。',
+                  marker,
+                ].join('\n\n')
+                await github.rest.issues.createComment({ ...repo, issue_number, body })
+              }
+              if (issue.state !== 'closed') await github.rest.issues.update({ ...repo, issue_number, state: 'closed', state_reason: 'completed' })
+              core.info(`Verified ${tag}; replied to and closed #${issue_number}`)
+            }
