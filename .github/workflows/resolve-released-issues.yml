@@ -32,11 +32,13 @@ jobs:
             const repo = context.repo
             const sha = context.payload.workflow_run.head_sha
             const { data: commit } = await github.rest.repos.getCommit({ ...repo, ref: sha })
-            // Opt in with a commit trailer, e.g. Release-Issues: #62, #63.
+            // Release-Issues closes verified fixes; Verify-Issues only replies.
             // Ordinary issue mentions and GitHub closing keywords are not used.
             const trailer = commit.commit.message.match(/^Release-Issues: ((?:#\d+[\s,]*)+)$/m)
-            if (!trailer) return
-            const issues = [...new Set([...trailer[1].matchAll(/#(\d+)/g)].map(match => Number(match[1])))]
+            const verifyTrailer = commit.commit.message.match(/^Verify-Issues: ((?:#\d+[\s,]*)+)$/m)
+            if (!trailer && !verifyTrailer) return
+            const verifyIssues = new Set([...(verifyTrailer?.[1] ?? '').matchAll(/#(\d+)/g)].map(match => Number(match[1])))
+            const issues = [...new Set([...(trailer?.[1] ?? '').matchAll(/#(\d+)/g)].map(match => Number(match[1])).concat([...verifyIssues]))]
             const required = ['Code Quality', 'Visual Regression', 'Release On Version Bump']
             const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, { ...repo, head_sha: sha, per_page: 100 })
             const checks = required.map(name => runs.find(run => run.name === name && run.event === 'push'))
@@ -75,22 +77,25 @@ jobs:
               rmSync(directory, { recursive: true, force: true })
             }
             for (const issue_number of issues) {
+              const verifyOnly = verifyIssues.has(issue_number)
               const { data: issue } = await github.rest.issues.get({ ...repo, issue_number })
-              if (issue.pull_request) throw new Error('Release-Issues must refer to issues, not pull requests')
+              if (issue.pull_request) throw new Error('Issue trailers must refer to issues, not pull requests')
               const marker = `<!-- verified-release:${tag}:issue-${issue_number} -->`
               const comments = await github.paginate(github.rest.issues.listComments, { ...repo, issue_number, per_page: 100 })
               if (!comments.some(comment => comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker))) {
                 const body = [
-                  `修复已随 [${tag}](${release.html_url}) 发布，请升级主题后重试。`,
-                  `本次修复：${commit.commit.message.split('\n')[0]}`,
+                  `${verifyOnly ? '相关改动' : '修复'}已随 [${tag}](${release.html_url}) 发布，请升级主题后重试。`,
+                  commit.commit.message.match(new RegExp(`^Issue-Reply-${issue_number}: (.+)$`, 'm'))?.[1] ?? `本次修复：${commit.commit.message.split('\n')[0]}`,
                   '验证结果：Code Quality、Visual Regression、Release On Version Bump 均成功；已下载发布包核对版本、目录结构及 SHA-256。',
                   checks.map(run => `[${run.name}](${run.html_url})`).join(' · '),
                   `主题包：\`${asset.name}\`\nSHA-256：\`${digest}\``,
-                  '感谢反馈，本 issue 按已修复关闭。如升级后仍有问题，请补充现象继续反馈。',
+                  verifyOnly
+                    ? '感谢反馈，暂时保留本 issue，等待升级后的实际验证结果。'
+                    : '感谢反馈，本 issue 按已修复关闭。如升级后仍有问题，请补充现象继续反馈。',
                   marker,
                 ].join('\n\n')
                 await github.rest.issues.createComment({ ...repo, issue_number, body })
               }
-              if (issue.state !== 'closed') await github.rest.issues.update({ ...repo, issue_number, state: 'closed', state_reason: 'completed' })
-              core.info(`Verified ${tag}; replied to and closed #${issue_number}`)
+              if (!verifyOnly && issue.state !== 'closed') await github.rest.issues.update({ ...repo, issue_number, state: 'closed', state_reason: 'completed' })
+              core.info(`Verified ${tag}; replied to #${issue_number}${verifyOnly ? ' for confirmation' : ' and closed it'}`)
             }

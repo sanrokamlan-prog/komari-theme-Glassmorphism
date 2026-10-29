@@ -28,9 +28,6 @@ interface ClusterSummary {
   onlineServers: number
 }
 
-const CITY_SLUG_INVALID_REGEX = /[^a-z0-9]+/g
-const CITY_SLUG_EDGE_REGEX = /^-+|-+$/g
-
 export function useNodeGeoClusters(options: UseNodeGeoClustersOptions = {}) {
   const nodesStore = useNodesStore()
   const appStore = useAppStore()
@@ -43,10 +40,7 @@ export function useNodeGeoClusters(options: UseNodeGeoClustersOptions = {}) {
 
     if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lng)) {
       const code = (geo.countryCode || regionCode || '').toUpperCase()
-      const citySlug = (geo.city || `${geo.lat.toFixed(2)},${geo.lng.toFixed(2)}`)
-        .toLowerCase()
-        .replace(CITY_SLUG_INVALID_REGEX, '-')
-        .replace(CITY_SLUG_EDGE_REGEX, '')
+      const citySlug = encodeURIComponent((geo.city?.trim() || `${geo.lat.toFixed(2)},${geo.lng.toFixed(2)}`).normalize('NFKC').toLowerCase())
       const label = formatCityNameZh(geo.city) || getRegionDisplayName(node.region) || getRegionDisplayName(code) || ''
       return {
         id: `${(code || 'xx').toLowerCase()}-${citySlug || 'city'}`,

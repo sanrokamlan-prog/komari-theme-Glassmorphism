@@ -37,7 +37,6 @@ const rows = computed(() => {
         latencyValue: props.stats.hasData.value ? props.stats.avgLatency.value : null,
         lossValue: props.stats.hasData.value ? props.stats.avgLoss.value : null,
         failed: false,
-        live: false,
       }]
   return source.map((item) => {
     const latencyBar = item.failed ? 'bg-signal-5' : item.latencyValue === null ? 'bg-muted-foreground/40' : (getLatencyToneClass(item.latencyValue).split(' ')[0] ?? 'bg-signal-1')
@@ -82,7 +81,7 @@ function inspectKeyboard(event: KeyboardEvent, id: number | string, count: numbe
         <button type="button" class="min-w-0 truncate text-left text-muted-foreground" :title="`${item.name}，打开完整图表`" :aria-label="`${item.name} ${item.latency}`" @click="clear(); emit('open')">
           {{ item.label }}
         </button>
-        <button type="button" class="text-right font-medium tabular-nums" :class="item.latencyToneClass" :title="item.live ? '最近一次探测' : '历史平均延迟'" @click="clear(); emit('open')">
+        <button type="button" class="text-right font-medium tabular-nums" :class="item.latencyToneClass" title="最近一小时窗口平均延迟" @click="clear(); emit('open')">
           {{ item.latency }}
         </button>
         <button
@@ -105,7 +104,7 @@ function inspectKeyboard(event: KeyboardEvent, id: number | string, count: numbe
             </span>
           </template>
         </button>
-        <button type="button" class="ping-loss-cell grid min-w-[3.75rem] grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-0.5 whitespace-nowrap font-medium tabular-nums" :title="`${item.name} 丢包率`" @click="clear(); emit('open')">
+        <button type="button" class="ping-loss-cell grid min-w-[3.75rem] grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-0.5 whitespace-nowrap font-medium tabular-nums" :title="`${item.name} 最近一小时窗口丢包率`" @click="clear(); emit('open')">
           <span class="text-muted-foreground">丢包</span>
           <span class="text-right" :class="item.lossToneClass">{{ item.loss }}</span>
         </button>
@@ -113,7 +112,7 @@ function inspectKeyboard(event: KeyboardEvent, id: number | string, count: numbe
     </template>
     <template v-else>
       <div v-for="item in rows" :key="item.id" :data-three-net-task="item.id === 'summary' ? undefined : item.id" class="grid grid-cols-2 gap-1.5">
-        <button v-for="metric in (['latency', 'loss'] as const)" :key="metric" type="button" class="group/panel flex min-w-0 flex-col rounded-lg bg-slate-500/5" :class="[app.nodeCardSize === 'mini' ? 'p-1 gap-1 h-7' : 'p-2 gap-1.5', app.nodeCardSize === 'large' ? 'h-14' : app.nodeCardSize === 'comfortable' ? 'h-12' : app.nodeCardSize === 'mini' ? 'h-7' : 'h-11']" @click="emit('open')">
+        <button v-for="metric in (['latency', 'loss'] as const)" :key="metric" type="button" class="group/panel flex min-w-0 flex-col rounded-lg bg-slate-500/5" :title="metric === 'latency' ? '最近一小时窗口平均延迟' : '最近一小时窗口丢包率'" :class="[app.nodeCardSize === 'mini' ? 'p-1 gap-1 h-7' : 'p-2 gap-1.5', app.nodeCardSize === 'large' ? 'h-14' : app.nodeCardSize === 'comfortable' ? 'h-12' : app.nodeCardSize === 'mini' ? 'h-7' : 'h-11']" @click="emit('open')">
           <span class="flex w-full justify-between text-[11px] leading-none"><span class="min-w-0 truncate text-muted-foreground">{{ metric === 'latency' ? item.label : '丢包' }}</span><span class="font-medium tabular-nums">{{ item[metric] }}</span></span>
           <span :data-node-ping-bars="item.id === 'summary' ? metric : `task-${item.id}-${metric}`" class="grid min-h-0 w-full flex-1 gap-px" :style="{ gridTemplateColumns: `repeat(${item.stats.history.length || 20}, minmax(0, 1fr))` }">
             <DataTooltip v-for="(point, index) in item.stats.history.length ? item.stats.history : Array.from({ length: 20 }, () => ({ time: '', latency: null, loss: null }))" :key="index" :content="`${point.time ? formatDateTime(point.time, 'HH:mm:ss') : ''}\n${point[metric] === null ? '无采样数据' : metric === 'latency' ? `${Math.round(point.latency!)} ms` : `${point.loss!.toFixed(1)}%`}`" placement="top" class="h-full w-full">

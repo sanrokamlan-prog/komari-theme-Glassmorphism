@@ -110,7 +110,7 @@ test('same-name tasks keep independent legends and tooltip text stays escaped', 
 })
 
 for (const mobile of [false, true]) {
-  test(`optional three-net history and live values on ${mobile ? 'mobile' : 'desktop'}`, async ({ browser }) => {
+  test(`optional three-net history and window averages on ${mobile ? 'mobile' : 'desktop'}`, async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: mobile ? 390 : 1280, height: 844 }, hasTouch: mobile, isMobile: mobile })
     const page = await context.newPage()
     const options = {
@@ -138,7 +138,7 @@ for (const mobile of [false, true]) {
       await expect(first.locator('[data-three-net-task]').first()).toHaveAttribute('data-three-net-task', '30')
       await expect(cards.nth(1).locator('[data-three-net-task]').first()).toHaveAttribute('data-three-net-task', '20')
       const row = first.locator('[data-three-net-task="30"]')
-      await expect(row).toContainText('70 ms')
+      await expect(row).toContainText('110 ms')
       await expect(row).toContainText('1.5%')
       const curve = row.getByRole('button', { name: /历史延迟/ })
       await expect(row.locator('svg path[stroke]')).toHaveCount(2)
@@ -147,7 +147,7 @@ for (const mobile of [false, true]) {
         return { height: element.getBoundingClientRect().height, color: getComputedStyle(curve).color }
       })
       expect(dimensions.height).toBe(20)
-      expect(dimensions.color).toBe(mobile ? 'rgb(74, 222, 128)' : 'rgb(21, 128, 61)')
+      expect(dimensions.color).toBe(mobile ? 'rgb(163, 230, 53)' : 'rgb(77, 124, 15)')
       expect(calls.filter(call => call.method === 'public:getPublicPingTasks')).toHaveLength(1)
       expect(calls.filter(call => call.method === 'public:queryMetrics' && (call.params?.metric_keys as string[])?.includes('ping.latency_ms'))).toHaveLength(12)
       if (mobile)
@@ -182,8 +182,9 @@ for (const mobile of [false, true]) {
         await expect(first.locator('[data-three-net-history]')).toHaveCount(0)
       }
       options.livePingOffset = 30
-      await expect(row).toContainText('100 ms', { timeout: 12_000 })
-      await row.getByRole('button', { name: '浙江移动 100 ms', exact: true }).click()
+      await expect.poll(() => calls.filter(call => call.method === 'common:getNodesLatestStatus').length).toBeGreaterThan(1)
+      await expect(row).toContainText('110 ms')
+      await row.getByRole('button', { name: '浙江移动 110 ms', exact: true }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
       expect(calls.filter(call => call.method === 'public:getPublicPingTasks')).toHaveLength(1)
       await page.getByRole('button', { name: '关闭', exact: true }).click()

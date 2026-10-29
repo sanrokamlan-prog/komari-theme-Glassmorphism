@@ -9,7 +9,7 @@ import { useAppStore } from '@/stores/app'
 import { shortenPingTaskName } from '@/utils/threeNetSettings'
 
 // Adapted from towersip: explicit IDs, per-node bindings, and separate history
-// computations from live values so status polling does not rebuild SVG paths.
+// computations from status metadata so polling does not rebuild SVG paths.
 export function useThreeNetPing(node: MaybeRefOrGetter<NodeData>, stats: ReturnType<typeof useNodePingStats>, enabled: MaybeRefOrGetter<boolean>) {
   const app = useAppStore()
   const tasks = shallowRef<PingTaskInfo[]>([])
@@ -56,11 +56,11 @@ export function useThreeNetPing(node: MaybeRefOrGetter<NodeData>, stats: ReturnT
   const items = computed(() => historyItems.value.map((item) => {
     const sample = toValue(node).ping?.[String(item.id)]
     const name = sample?.name || tasks.value.find(task => task.id === item.id)?.name || `任务 ${item.id}`
-    const latest = sample && Number.isFinite(sample.latest) ? sample.latest : null
-    const latency = latest ?? (item.stats.hasData ? item.stats.avgLatency : null)
-    const loss = sample && Number.isFinite(sample.loss) && sample.loss >= 0 && sample.loss <= 100
-      ? sample.loss
-      : item.stats.hasData ? item.stats.avgLoss : null
+    // Use the same one-hour window as the sparkline. A recovered latest sample
+    // must not hide packet loss recorded earlier in that window.
+    const loss = item.stats.hasData ? item.stats.avgLoss : null
+    const failed = loss !== null && loss >= 100
+    const latency = item.stats.hasData ? failed ? -1 : item.stats.avgLatency : null
     return {
       ...item,
       name,
@@ -69,8 +69,7 @@ export function useThreeNetPing(node: MaybeRefOrGetter<NodeData>, stats: ReturnT
       lossValue: loss,
       latency: latency === null ? '—' : latency < 0 ? '不可达' : `${Math.round(latency)} ms`,
       loss: loss === null ? '—' : `${loss.toFixed(1)}%`,
-      live: latest !== null,
-      failed: latest !== null && latest < 0,
+      failed,
     }
   }))
   return { items }

@@ -9,7 +9,7 @@ import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import NodeEarthGlobe from '@/components/NodeEarthGlobe.vue'
 import { CardX } from '@/components/ui/card-x'
 import { DataTooltip } from '@/components/ui/data-tooltip'
-import { ensureNodeGeoLookup } from '@/composables/useNodeGeoLookup'
+import { ensureNodeGeoLookup, resetNodeGeoLookup } from '@/composables/useNodeGeoLookup'
 import { UI_CONFIG } from '@/constants/ui'
 import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
@@ -710,6 +710,8 @@ watch(
   () => {
     if (appStore.privateFeaturesAllowed)
       void ensureNodeGeoLookup(appStore, nodesStore.visibleNodes)
+    else
+      resetNodeGeoLookup()
   },
   { immediate: true, deep: true },
 )

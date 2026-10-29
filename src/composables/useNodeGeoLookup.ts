@@ -17,16 +17,21 @@ import { lookupIpGeo, setIpGeoProviderUrls } from '@/utils/ipGeoHelper'
 
 const ipGeoMap = ref(new Map<string, IpGeo>())
 const failedIpAttempts = new Map<string, number>()
-/** 最近一次已发起查询的节点集合签名，用于避免对同一批节点重复请求。 */
-let lastRequestedSignature = ''
+let generation = 0
+let providerSignature = ''
 
 const IP_GEO_RETRY_INTERVAL_MS = 10 * 60 * 1000
 const IP_GEO_BATCH_SIZE = 8
 
 /** 查询未完成时挂起本轮请求，供多个调用方共享同一次网络往返。 */
-let pending: Promise<void> | null = null
+const pending = new Map<string, Promise<void>>()
 
 function applyProviderUrls(appStore: ReturnType<typeof useAppStore>): void {
+  const signature = JSON.stringify(appStore.ipGeoProviderUrls)
+  if (signature !== providerSignature) {
+    resetNodeGeoLookup()
+    providerSignature = signature
+  }
   setIpGeoProviderUrls(appStore.ipGeoProviderUrls)
 }
 
@@ -36,6 +41,7 @@ function applyProviderUrls(appStore: ReturnType<typeof useAppStore>): void {
  */
 export async function ensureNodeGeoLookup(appStore: ReturnType<typeof useAppStore>, nodes: NodeData[]): Promise<void> {
   applyProviderUrls(appStore)
+  const current = generation
 
   if (appStore.ipGeoProviderUrls?.length === 0)
     return
@@ -43,14 +49,16 @@ export async function ensureNodeGeoLookup(appStore: ReturnType<typeof useAppStor
     return
   if (!await appStore.requireLoginPermission('providerGeoLookup', { force: false }))
     return
+  if (current !== generation || !appStore.privateFeaturesAllowed)
+    return
 
   // 同一批节点重复调用时复用上一次请求，避免并发重复查询。
   const signature = nodes.map(node => `${node.uuid}:${getNodeIps(node).join(',')}`).join('|')
-  if (signature === lastRequestedSignature)
-    return
+  const existing = pending.get(signature)
+  if (existing)
+    return existing
 
-  lastRequestedSignature = signature
-  pending ??= (async () => {
+  const task = (async () => {
     const now = Date.now()
     const batches: string[][] = []
 
@@ -71,6 +79,8 @@ export async function ensureNodeGeoLookup(appStore: ReturnType<typeof useAppStor
       const results = (await Promise.all(batch.map(async (candidates) => {
         const attempts: Array<{ ip: string, geo: IpGeo | null }> = []
         for (const ip of candidates) {
+          if (current !== generation)
+            break
           const geo = ipGeoMap.value.get(ip) ?? await lookupIpGeo(ip)
           attempts.push({ ip, geo })
           if (geo)
@@ -79,6 +89,8 @@ export async function ensureNodeGeoLookup(appStore: ReturnType<typeof useAppStor
         return attempts
       }))).flat()
 
+      if (current !== generation || !appStore.privateFeaturesAllowed)
+        return
       const resolved = results.filter((result): result is { ip: string, geo: IpGeo } => result.geo !== null)
       for (const { ip, geo } of results) {
         if (geo)
@@ -95,10 +107,12 @@ export async function ensureNodeGeoLookup(appStore: ReturnType<typeof useAppStor
       }
     }
   })().finally(() => {
-    pending = null
+    if (pending.get(signature) === task)
+      pending.delete(signature)
   })
 
-  await pending
+  pending.set(signature, task)
+  await task
 }
 
 /** 已解析的 IP →地理位置，未查询到的 IP 返回 undefined。 */
@@ -108,9 +122,10 @@ export function getResolvedIpGeo(node: NodeData): IpGeo | undefined {
 
 /** 清空缓存，用于权限撤销或设置变更。 */
 export function resetNodeGeoLookup(): void {
+  generation++
   ipGeoMap.value = new Map()
   failedIpAttempts.clear()
-  lastRequestedSignature = ''
+  pending.clear()
 }
 
 /**

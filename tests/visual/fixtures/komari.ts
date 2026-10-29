@@ -34,12 +34,14 @@ export interface VisualFixtureOptions {
   threeNetTaskIds?: string
   threeNetNodeBindings?: string
   livePingOffset?: number
+  livePingLoss?: number
   pingGaps?: boolean
   duplicateTaskNames?: boolean
   groupNodeCount?: boolean
   hiddenFirstNode?: boolean
   loggedIn?: boolean
   publicNodeIps?: boolean
+  nodeIpOverrides?: Record<string, { ipv4: string, ipv6: string, region: string }>
   pingRetentionHours?: number
 }
 
@@ -294,7 +296,7 @@ async function handleRpc(route: Route, clientFixtures = clients, options: Visual
               min: 10,
               max: 200,
               tail: 100,
-              loss: status.online ? 1.5 : 100,
+              loss: options.livePingLoss ?? (status.online ? 1.5 : 100),
             }])),
           }]))
         : statuses
@@ -337,9 +339,9 @@ async function handleRpc(route: Route, clientFixtures = clients, options: Visual
               name: task.name,
               interval: task.interval,
               tags: { task_id: String(task.id), task_name: task.name },
-              total: 48,
-              valid: 48,
-              loss: 0,
+              total: options.threeNetPing ? 200 : 48,
+              valid: options.threeNetPing ? 197 : 48,
+              loss: options.threeNetPing ? 1.5 : 0,
               loss_approximate: false,
               min: 40 + task.id,
               max: 120 + task.id,
@@ -378,6 +380,10 @@ export async function installKomariFixture(page: Page, options: VisualFixtureOpt
   if (options.publicNodeIps) {
     clientFixtures[uuidFor(0)]!.ipv4 = '8.8.8.8'
     clientFixtures[uuidFor(0)]!.ipv6 = '2606:4700::1111'
+  }
+  for (const [uuid, values] of Object.entries(options.nodeIpOverrides ?? {})) {
+    if (clientFixtures[uuid])
+      Object.assign(clientFixtures[uuid], values)
   }
   const settings = {
     themeMode: options.dark ? 'dark' : 'light',

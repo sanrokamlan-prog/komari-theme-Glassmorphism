@@ -34,7 +34,7 @@ const actionButtons = computed(() => {
     dark: 'icon-park-outline:moon',
   } as const
 
-  const buttons: Array<{ title: string, icon: string, action: string, pressed?: boolean }> = []
+  const buttons: Array<{ title: string, icon: string, action: string, pressed?: boolean, href?: string }> = []
 
   if (router.currentRoute.value.name === 'home' && appStore.homeToolsEnabled) {
     buttons.push({
@@ -64,6 +64,7 @@ const actionButtons = computed(() => {
       title: '后台管理',
       icon: 'icon-park-outline:setting',
       action: 'jumpToSetting',
+      href: '/admin',
     })
   }
   return buttons
@@ -92,7 +93,6 @@ function handleButtonClick(action: string) {
         path: router.currentRoute.value.path,
         route: String(router.currentRoute.value.name ?? ''),
       })
-      location.href = '/admin'
       break
   }
 }
@@ -124,12 +124,15 @@ const sitename = computed(() => appStore.publicSettings?.sitename || 'Komari Mon
           <Tooltip v-for="button in actionButtons" :key="button.action">
             <TooltipTrigger as-child>
               <Button
+                :as="button.href ? 'a' : 'button'"
+                :href="button.href"
                 variant="ghost"
                 size="icon-sm"
                 :aria-label="button.title"
                 :aria-pressed="button.pressed"
                 :class="button.pressed && 'bg-background/70 text-selection'"
                 @click="handleButtonClick(button.action)"
+                @auxclick="button.href && $event.button === 1 && handleButtonClick(button.action)"
               >
                 <Icon :icon="button.icon" :width="18" :height="18" />
               </Button>

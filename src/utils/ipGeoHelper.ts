@@ -22,7 +22,7 @@ export interface IpGeo {
 }
 
 const CACHE_PREFIX = 'komari-theme-emerald:ipgeo'
-const CACHE_VERSION = 4
+const CACHE_VERSION = 5
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 天
 const NEGATIVE_CACHE_TTL_MS = 6 * 60 * 60 * 1000 // 6 小时
 const IP_GEO_TIMEOUT_MS = 5000
@@ -50,8 +50,8 @@ interface ProviderEntry {
   lookup: Provider
 }
 
-function cacheKey(ip: string): string {
-  return `${CACHE_PREFIX}:${ip}`
+function cacheKey(ip: string, configuration: string): string {
+  return `${CACHE_PREFIX}:${encodeURIComponent(configuration)}:${ip}`
 }
 
 function isValidGeo(geo: unknown): geo is IpGeo {
@@ -63,11 +63,11 @@ function isValidGeo(geo: unknown): geo is IpGeo {
     && !(g.lat === 0 && g.lng === 0)
 }
 
-function readCache(ip: string): { geo: IpGeo | null, negative: boolean } | null {
+function readCache(ip: string, configuration: string): { geo: IpGeo | null, negative: boolean } | null {
   if (typeof window === 'undefined')
     return null
   try {
-    const raw = window.localStorage.getItem(cacheKey(ip))
+    const raw = window.localStorage.getItem(cacheKey(ip, configuration))
     if (!raw)
       return null
     const parsed = JSON.parse(raw) as CacheEntry
@@ -89,19 +89,19 @@ function readCache(ip: string): { geo: IpGeo | null, negative: boolean } | null 
   }
 }
 
-function writeCache(ip: string, geo: IpGeo): void {
-  writeCacheEntry(ip, { version: CACHE_VERSION, updatedAt: Date.now(), geo })
+function writeCache(ip: string, configuration: string, geo: IpGeo): void {
+  writeCacheEntry(ip, configuration, { version: CACHE_VERSION, updatedAt: Date.now(), geo })
 }
 
-function writeNegativeCache(ip: string): void {
-  writeCacheEntry(ip, { version: CACHE_VERSION, updatedAt: Date.now(), geo: null, negative: true })
+function writeNegativeCache(ip: string, configuration: string): void {
+  writeCacheEntry(ip, configuration, { version: CACHE_VERSION, updatedAt: Date.now(), geo: null, negative: true })
 }
 
-function writeCacheEntry(ip: string, entry: CacheEntry): void {
+function writeCacheEntry(ip: string, configuration: string, entry: CacheEntry): void {
   if (typeof window === 'undefined')
     return
   try {
-    window.localStorage.setItem(cacheKey(ip), JSON.stringify(entry))
+    window.localStorage.setItem(cacheKey(ip, configuration), JSON.stringify(entry))
   }
   catch {
     // 忽略写盘失败（隐私模式 / 配额已满）
@@ -296,24 +296,16 @@ export function setIpGeoProviderUrls(urls: string[] | null): void {
 
 const providerStates = new Map<string, ProviderState>()
 
-// 轮询起始服务：每次查询从不同站点开始，避免所有请求都打到同一站点导致频控后整体失败
-let providerCursor = 0
 interface ResolvedProvider extends ProviderEntry {
   template: string
 }
 
-function orderedProviders(): ResolvedProvider[] {
+function orderedProviders(urls: string[]): ResolvedProvider[] {
   // 配置为空时表示「只用后台 region」，不发起任何在线查询。
-  if (!activeProviderUrls.length)
+  if (!urls.length)
     return []
-  const entries = activeProviderUrls
+  const providers = urls
     .map(url => ({ ...(BUILTIN_BY_URL.get(url) ?? { id: url, lookup: fromGenericJson }), template: url }))
-  const n = entries.length
-  if (!n)
-    return []
-  const start = providerCursor % n
-  providerCursor = (providerCursor + 1) % n
-  const providers = Array.from({ length: n }, (_, i) => entries[(start + i) % n]!)
   const now = Date.now()
   const available = providers.filter(provider => (providerStates.get(provider.id)?.blockedUntil ?? 0) <= now)
   return available.length > 0 ? available : providers
@@ -338,25 +330,28 @@ const inflight = new Map<string, Promise<IpGeo | null>>()
  */
 export async function lookupIpGeo(ip: string): Promise<IpGeo | null> {
   const normalizedIp = ip.trim()
-  if (!isPublicIp(normalizedIp))
+  const urls = [...activeProviderUrls]
+  if (!isPublicIp(normalizedIp) || !urls.length)
     return null
 
-  const cached = readCache(normalizedIp)
+  const configuration = JSON.stringify(urls)
+  const key = cacheKey(normalizedIp, configuration)
+  const cached = readCache(normalizedIp, configuration)
   if (cached)
     return cached.geo
 
-  const existing = inflight.get(normalizedIp)
+  const existing = inflight.get(key)
   if (existing)
     return existing
 
   const task = (async () => {
-    // 从轮询选出的起始站点开始，依次回退，分摊请求压力
-    for (const provider of orderedProviders()) {
+    // Respect configured priority; only failures/backoff advance to another source.
+    for (const provider of orderedProviders(urls)) {
       try {
         const geo = await provider.lookup(normalizedIp, provider.template)
         if (geo && isValidGeo(geo)) {
           markProviderSuccess(provider.id)
-          writeCache(normalizedIp, geo)
+          writeCache(normalizedIp, configuration, geo)
           return geo
         }
         markProviderFailure(provider.id)
@@ -365,15 +360,15 @@ export async function lookupIpGeo(ip: string): Promise<IpGeo | null> {
         markProviderFailure(provider.id)
       }
     }
-    writeNegativeCache(normalizedIp)
+    writeNegativeCache(normalizedIp, configuration)
     return null
   })()
 
-  inflight.set(normalizedIp, task)
+  inflight.set(key, task)
   try {
     return await task
   }
   finally {
-    inflight.delete(normalizedIp)
+    inflight.delete(key)
   }
 }
