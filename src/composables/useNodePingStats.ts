@@ -434,6 +434,30 @@ function retainSharedPingRecordsEntry(hours: number, maxCount?: number, uuid?: s
   }
 }
 
+function resolveAdaptiveBucketCount(
+  timestamps: number[],
+  windowDurationMs: number,
+  maxBuckets: number,
+): number {
+  if (maxBuckets <= HISTORY_BUCKET_COUNT || timestamps.length < 2)
+    return Math.min(maxBuckets, Math.max(1, timestamps.length))
+
+  const gaps: number[] = []
+  for (let i = 1; i < timestamps.length; i++) {
+    const gap = timestamps[i]! - timestamps[i - 1]!
+    if (gap > 0)
+      gaps.push(gap)
+  }
+  if (!gaps.length)
+    return HISTORY_BUCKET_COUNT
+
+  gaps.sort((a, b) => a - b)
+  const medianGap = gaps[Math.floor(gaps.length / 2)]!
+  // 桶宽至少覆盖典型采样间隔，防止低频 Ping 任务出现假性空桶断线
+  const maxSafeBuckets = Math.floor(windowDurationMs / Math.max(medianGap * 1.05, 1))
+  return Math.max(HISTORY_BUCKET_COUNT, Math.min(maxBuckets, maxSafeBuckets))
+}
+
 function buildPingHistory(
   records: PingRecord[],
   metricLossPoints?: MetricLossPoint[],
@@ -466,7 +490,13 @@ function buildPingHistory(
     ? now
     : lastSampleTime
   const windowStart = windowEnd - windowDurationMs
-  const bucketCount = Math.max(1, options.bucketCount ?? HISTORY_BUCKET_COUNT)
+  const requestedBuckets = Math.max(1, options.bucketCount ?? HISTORY_BUCKET_COUNT)
+  const sampleTimestamps = sortedRecords.length
+    ? sortedRecords.map(record => record.timestamp)
+    : sortedMetricLossPoints.map(point => point.timestamp)
+  const bucketCount = requestedBuckets > HISTORY_BUCKET_COUNT
+    ? resolveAdaptiveBucketCount(sampleTimestamps, windowDurationMs, requestedBuckets)
+    : Math.min(requestedBuckets, Math.max(sortedRecords.length, sortedMetricLossPoints.length))
   const bucketSize = Math.max(1, (windowEnd - windowStart) / bucketCount)
 
   const history: NodePingHistoryPoint[] = []

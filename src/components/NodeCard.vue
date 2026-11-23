@@ -450,7 +450,7 @@ function hasFlag(): boolean {
                 <Icon :icon="item.icon" width="11" height="11" class="shrink-0" />
                 <span v-if="item.text" class="truncate min-w-0 overflow-hidden">{{ item.text }}</span>
                 <span v-else class="truncate min-w-0 tabular-nums">
-                  {{ item.prefix }}{{ item.value ? ` ${item.value}` : '' }}{{ item.unit ? ` ${item.unit}` : '' }}
+                  <span v-if="item.prefix">{{ item.prefix }}</span><span v-if="item.value">{{ item.value }}</span><span v-if="item.unit">{{ item.unit }}</span>
                 </span>
               </div>
             </template>

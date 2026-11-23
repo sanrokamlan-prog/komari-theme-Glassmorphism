@@ -18,7 +18,7 @@ interface VisitorProvider {
 
 type JsonRecord = Record<string, unknown>
 
-const visitorFetchTimeout = 8000
+const visitorFetchTimeout = 4000
 const visitorCacheKey = 'komari-theme-glassmorphism:visitor-info:v1'
 const visitorCacheTtlMs = 30 * 60 * 1000
 const mobileScrollIdleDelay = 700
@@ -156,10 +156,23 @@ async function fetchVisitorData(): Promise<VisitorData | null> {
   if (cached)
     return cached
 
+  // 优先请求主源避免并发浪费请求，仅在主源失败时并行竞速其余回退源
+  const [primary, ...fallbacks] = visitorProviders
+  if (primary) {
+    const primaryData = await fetchProviderData(primary)
+    if (primaryData) {
+      writeCachedVisitorData(primaryData)
+      return primaryData
+    }
+  }
+
+  if (!fallbacks.length)
+    return null
+
   const raceController = new AbortController()
   try {
     const data = await Promise.any(
-      visitorProviders.map(async (provider) => {
+      fallbacks.map(async (provider) => {
         const result = await fetchProviderData(provider, raceController.signal)
         if (!result)
           throw new Error(`Empty visitor data from ${provider.url}`)
