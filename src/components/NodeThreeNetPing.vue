@@ -22,6 +22,9 @@ const TEXT_TONES: Record<string, string> = {
 }
 const { items } = useThreeNetPing(() => props.node, props.stats, () => props.enabled)
 const rows = computed(() => {
+  const summaryCurve = props.stats.sparklineHistory.value.length
+    ? props.stats.sparklineHistory.value
+    : props.stats.history.value
   const source = items.value.length
     ? items.value
     : [{
@@ -30,8 +33,10 @@ const rows = computed(() => {
         label: '延迟',
         stats: {
           history: props.stats.history.value,
+          sparklineHistory: summaryCurve,
         },
-        values: props.stats.history.value.map(point => point.latency),
+        sparklineHistory: summaryCurve,
+        values: summaryCurve.map(point => point.latency),
         latency: props.stats.hasData.value ? `${Math.round(props.stats.avgLatency.value)} ms` : props.stats.loading.value ? '加载中' : '—',
         loss: props.stats.hasData.value ? `${props.stats.avgLoss.value.toFixed(1)}%` : '—',
         latencyValue: props.stats.hasData.value ? props.stats.avgLatency.value : null,
@@ -50,7 +55,7 @@ const inspected = computed(() => {
   if (!selection)
     return null
   const item = rows.value.find(item => String(item.id) === selection.rowKey)
-  const point = item?.stats.history[selection.index]
+  const point = item?.sparklineHistory[selection.index]
   return point && item ? { item, point } : null
 })
 watch(() => props.node.uuid, clear)
@@ -99,7 +104,12 @@ function inspectKeyboard(event: KeyboardEvent, id: number | string, count: numbe
             <span class="pointer-events-none absolute top-1/2 h-4 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current" :style="{ left: `${sparklineMarkerPercent(inspect.index, item.values.length)}%` }" />
             <span v-if="inspected" data-three-net-history role="status" class="ping-history-tooltip pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 w-max max-w-52 -translate-x-1/2 rounded bg-foreground p-1.5 text-center text-[10px] leading-snug text-background shadow-lg">
               <span class="block">{{ inspected.item.name }} · {{ formatDateTime(inspected.point.time, 'HH:mm:ss') }}</span>
-              <span class="block">延迟 {{ inspected.point.latency === null ? '无有效样本' : `${Math.round(inspected.point.latency)} ms` }}</span>
+              <span class="block">
+                延迟 {{ inspected.point.latency === null ? '无有效样本' : `${Math.round(inspected.point.latency)} ms` }}
+                <template v-if="inspected.point.maxLatency != null && inspected.point.latency != null && Math.round(inspected.point.maxLatency) > Math.round(inspected.point.latency)">
+                  （峰值 {{ Math.round(inspected.point.maxLatency) }} ms）
+                </template>
+              </span>
               <span>丢包 {{ inspected.point.loss === null ? '无样本' : `${inspected.point.loss.toFixed(1)}%` }}</span>
             </span>
           </template>
@@ -195,10 +205,21 @@ function inspectKeyboard(event: KeyboardEvent, id: number | string, count: numbe
   color: var(--signal-4);
 }
 
-/* Override the site's glass surface rule: history tooltips need an opaque surface. */
+/* 毛玻璃风格历史点提示 */
 .ping-history-tooltip {
-  background: var(--color-foreground) !important;
-  color: var(--color-background) !important;
+  background-color: var(--glass-light-card-hover, rgb(248 250 252 / 0.92)) !important;
+  color: var(--glass-light-text, #0f172a) !important;
+  border: 1px solid var(--glass-light-border, rgb(226 232 240 / 0.85)) !important;
+  backdrop-filter: blur(14px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(160%) !important;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.16) !important;
+}
+
+:global(.dark) .ping-history-tooltip {
+  background-color: var(--glass-dark-card-hover, rgb(15 23 42 / 0.92)) !important;
+  color: var(--glass-dark-text, #f8fafc) !important;
+  border: 1px solid var(--glass-dark-border, rgb(255 255 255 / 0.18)) !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.48) !important;
 }
 
 @media (pointer: coarse), (max-width: 420px) {

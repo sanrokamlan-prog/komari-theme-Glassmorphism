@@ -22,6 +22,9 @@ export interface RequestManagerOptions {
   shouldRetry?: (error: unknown) => boolean
 }
 
+const RETRY_BASE_DELAY_MS = 250
+const RETRY_MAX_DELAY_MS = 3000
+
 function createAbortError(message = 'Request aborted'): Error {
   const error = new Error(message)
   error.name = 'AbortError'
@@ -36,6 +39,32 @@ function waitForAbort(signal: AbortSignal): Promise<never> {
     const abort = () => reject(createAbortError())
     signal.addEventListener('abort', abort, { once: true })
   })
+}
+
+function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted)
+    return Promise.reject(createAbortError())
+
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const onAbort = () => {
+      if (timer !== null)
+        clearTimeout(timer)
+      reject(createAbortError())
+    }
+    timer = setTimeout(() => {
+      timer = null
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function getRetryDelayMs(attempt: number): number {
+  const exponential = Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, RETRY_MAX_DELAY_MS)
+  const jitter = Math.floor(Math.random() * Math.max(50, exponential * 0.25))
+  return exponential + jitter
 }
 
 export class RequestManager {
@@ -162,6 +191,7 @@ export class RequestManager {
           throw error
         if (attempt >= request.retryAttempts || !request.shouldRetry(error))
           throw error
+        await sleepWithAbort(getRetryDelayMs(attempt), request.controller.signal)
       }
       finally {
         clearTimeout(timeoutId)

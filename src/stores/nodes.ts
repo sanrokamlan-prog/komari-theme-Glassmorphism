@@ -235,6 +235,38 @@ const useNodesStore = defineStore('nodes', () => {
     }
   }
 
+  function isNodePingEqual(left: NodeStatus['ping'], right: NodeStatus['ping']): boolean {
+    if (left === right)
+      return true
+    if (!left || !right)
+      return false
+
+    const leftKeys = Object.keys(left)
+    const rightKeys = Object.keys(right)
+    if (leftKeys.length !== rightKeys.length)
+      return false
+
+    for (const key of leftKeys) {
+      const a = left[key]
+      const b = right[key]
+      if (!a || !b)
+        return false
+      if (
+        a.name !== b.name
+        || a.latest !== b.latest
+        || a.avg !== b.avg
+        || a.tail !== b.tail
+        || a.loss !== b.loss
+        || a.min !== b.min
+        || a.max !== b.max
+      ) {
+        return false
+      }
+    }
+
+    return true
+  }
+
   /**
    * 就地写入状态字段，仅在值实际变化时赋值。
    *
@@ -244,7 +276,8 @@ const useNodesStore = defineStore('nodes', () => {
    * 只会重算真正变化的字段所对应的视图；未变化的字段连依赖都不会触发。
    */
   function applyStatus(node: NodeData, status: StatusData): void {
-    node.ping = status.ping
+    if (!isNodePingEqual(node.ping, status.ping))
+      node.ping = status.ping
     if (node.online !== status.online)
       node.online = status.online
     if (node.time !== status.time)

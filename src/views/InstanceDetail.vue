@@ -2,6 +2,7 @@
 import type { DetailMetricCardKey } from '@/stores/app'
 import type { CurrencyCode } from '@/utils/financeHelper'
 import { Icon } from '@iconify/vue'
+import { useEventListener } from '@vueuse/core'
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +17,6 @@ import { LOAD_RECORD_MAX_COUNT } from '@/constants/load'
 import { loadNodeLoadRecords } from '@/services/history.service'
 import { useAppStore } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
-import { formatCityNameZh } from '@/utils/cityNameHelper'
 import { getCpuBenchmarkRating, getPassMarkCpuLookupUrl } from '@/utils/cpuBenchmark'
 import * as financeHelper from '@/utils/financeHelper'
 import { gpuUsageFromStatus } from '@/utils/gpuHelper'
@@ -55,6 +55,7 @@ const { getNodeProviderMetadata } = useNodeProviderMetadata({
   enabled: () => Boolean(data.value),
   allowGeoLookup: () => appStore.privateFeaturesAllowed,
   geoPermission: 'providerGeoLookup',
+  retryOnMissingGeo: true,
 })
 
 async function loadTrafficPeakRecords(uuid: string): Promise<Array<{ net_in?: number, net_out?: number }>> {
@@ -98,13 +99,33 @@ onMounted(async () => {
   exchangeRates.value = rates
 })
 
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  const target = event.target as HTMLElement | null
+  const isEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)
+  if (isEditable || event.ctrlKey || event.metaKey)
+    return
+
+  if ((event.altKey && event.key === 'ArrowLeft') || (!event.altKey && event.key === '[')) {
+    if (detailNodes.value.length >= 2) {
+      event.preventDefault()
+      navigateDetailNode(-1)
+    }
+  }
+  else if ((event.altKey && event.key === 'ArrowRight') || (!event.altKey && event.key === ']')) {
+    if (detailNodes.value.length >= 2) {
+      event.preventDefault()
+      navigateDetailNode(1)
+    }
+  }
+})
+
 // 当节点数据加载后尝试获取厂商信息
 // 注：节点 IP 通常不直接暴露，这里用节点 uuid 作为 fallback 标识
 // 如果 data.value 有 ip 字段则直接用，否则跳过
-watch(data, (node) => {
+watch(() => data.value?.uuid, (uuid) => {
   activeDetailSection.value = 'overview'
-  if (node)
-    void fetchTrafficPeak(node.uuid)
+  if (uuid)
+    void fetchTrafficPeak(uuid)
 }, { immediate: true })
 
 const cpuBenchmarkUrl = computed(() => getPassMarkCpuLookupUrl(data.value?.cpu_name ?? ''))
@@ -147,12 +168,13 @@ function toggleCurrentFavorite(): void {
     appStore.toggleFavoriteNode(data.value.uuid)
 }
 
-// 机房/厂商展示：城市 · 厂商 · ASN（缺项自动省略）
+// 机房/厂商展示：英文城市/地区 · 厂商 · ASN（缺项自动省略）
 const providerMetadata = computed(() => data.value ? getNodeProviderMetadata(data.value) : null)
 const vpsProvider = computed(() => providerMetadata.value?.provider ?? null)
 const providerDisplay = computed(() => {
   const parts: string[] = []
-  const cityName = formatCityNameZh(providerMetadata.value?.geo?.city)
+  const cityName = providerMetadata.value?.geo?.city?.trim()
+    || (data.value?.region ? getRegionDisplayName(data.value.region, 'en') : '')
   if (cityName)
     parts.push(cityName)
   if (providerMetadata.value?.provider?.displayName)
@@ -590,7 +612,13 @@ const metricCards = computed<MetricCard[]>(() => appStore.detailMetricCardOrder.
           class="group h-full bg-background/50 border-none hover:bg-background transition-all rounded-md"
           content-class="h-full !p-3"
         >
-          <div :title="item.tooltip" class="flex h-full min-h-10 md:min-h-18 flex-col justify-between gap-3">
+          <DataTooltip
+            as="div"
+            placement="top"
+            :content="item.tooltip"
+            class="flex h-full min-h-10 md:min-h-18 w-full flex-col justify-between gap-3"
+            content-class="max-w-[min(18rem,calc(100vw-2rem))] whitespace-pre-wrap break-words text-left"
+          >
             <div class="flex items-center justify-between gap-2">
               <span class="text-xs font-medium tracking-wider text-muted-foreground">{{ item.label }}</span>
               <Icon :icon="item.icon" :width="20" :height="20" class="text-slate-500/25 transition-colors group-hover:text-slate-500" />
@@ -601,7 +629,7 @@ const metricCards = computed<MetricCard[]>(() => appStore.detailMetricCardOrder.
                 <span v-if="item.unit" class="shrink-0 text-[11px] font-medium text-muted-foreground sm:text-xs">{{ item.unit }}</span>
               </div>
             </div>
-          </div>
+          </DataTooltip>
         </CardX>
       </div>
 
@@ -633,9 +661,12 @@ const metricCards = computed<MetricCard[]>(() => appStore.detailMetricCardOrder.
                 </a>
               </div>
               <span class="text-xs sm:text-sm break-all">{{ data.cpu_name }} ({{ data.cpu_cores }} vCPU)</span>
-              <div
-                class="mt-1 flex items-center gap-2"
-                :title="`参考公开天梯与型号代际的本地近似分级，不代表当前 ${data.cpu_cores} vCPU 的实测性能。${cpuBenchmarkRating.description}`"
+              <DataTooltip
+                as="div"
+                placement="top"
+                :content="`参考公开天梯与型号代际的本地近似分级，不代表当前 ${data.cpu_cores} vCPU 的实测性能。${cpuBenchmarkRating.description}`"
+                class="mt-1 flex w-full items-center gap-2"
+                content-class="w-72 whitespace-normal break-words text-left"
               >
                 <span class="shrink-0 text-xs font-bold" :class="cpuBenchmarkTierTextClass">{{ cpuBenchmarkRating.tier }}</span>
                 <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-500/10">
@@ -646,7 +677,7 @@ const metricCards = computed<MetricCard[]>(() => appStore.detailMetricCardOrder.
                   />
                 </div>
                 <span class="shrink-0 text-[11px] text-muted-foreground">{{ cpuBenchmarkRating.label }}</span>
-              </div>
+              </DataTooltip>
             </div>
 
             <!-- IP/架构 · 虚拟化 · GPU(仅在存在时)，列数随数量自适应避免留空，整体撑满高度 -->

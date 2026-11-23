@@ -4,7 +4,7 @@ import type { NodeData } from '@/stores/nodes'
 import type { CurrencyCode, ExchangeRateSource } from '@/utils/financeHelper'
 import type { TopNodeMetric } from '@/utils/nodeMetricsHelper'
 import { Icon } from '@iconify/vue'
-import { useNow } from '@vueuse/core'
+import { useDocumentVisibility, useNow } from '@vueuse/core'
 import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import NodeEarthGlobe from '@/components/NodeEarthGlobe.vue'
 import { CardX } from '@/components/ui/card-x'
@@ -77,7 +77,22 @@ const exchangeRateUpdatedAt = ref<number | null>(null)
 const financeCurrency = ref<CurrencyCode>('CNY')
 const excludeFreeNodes = ref(true)
 const financeDetailsOpen = ref(false)
-const currentTime = useNow({ interval: 1000 })
+const documentVisibility = useDocumentVisibility()
+const { now: currentTime, pause: pauseCurrentTime, resume: resumeCurrentTime } = useNow({
+  interval: 1000,
+  controls: true,
+})
+const currentTimeCardEnabled = computed(() => appStore.generalCardOrder.includes('currentTime'))
+watch(
+  [currentTimeCardEnabled, documentVisibility],
+  ([enabled, visibility]) => {
+    if (enabled && visibility === 'visible')
+      resumeCurrentTime()
+    else
+      pauseCurrentTime()
+  },
+  { immediate: true },
+)
 const summaryNodes = computed(() => props.nodes ?? nodesStore.visibleNodes)
 const summaryTransitionKey = computed(() => props.transitionKey ?? nodesStore.visibleNodes.length)
 const metricSwitchTransitionProps = computed(() => ({
@@ -705,15 +720,21 @@ const visibleCards = computed(() => appStore.generalCardOrder.map(getCardDefinit
 const showEarth = computed(() => !appStore.hideEarth)
 
 // 无论地球是否显示都补齐IP 地理位置，保证节点卡片国旗与地球落点始终同源。
+// 仅监听与地理位置相关的静态字段，避免每轮实时指标轮询触发 deep traverse。
+const nodeGeoLookupKey = computed(() =>
+  nodesStore.visibleNodes
+    .map(node => `${node.uuid}:${node.ipv4 ?? ''}:${node.ipv6 ?? ''}:${node.region ?? ''}`)
+    .join('|'),
+)
 watch(
-  [() => nodesStore.visibleNodes, () => appStore.ipGeoProviderUrls, () => appStore.privateFeaturesAllowed],
+  [nodeGeoLookupKey, () => (appStore.ipGeoProviderUrls ?? []).join('|'), () => appStore.privateFeaturesAllowed],
   () => {
     if (appStore.privateFeaturesAllowed)
       void ensureNodeGeoLookup(appStore, nodesStore.visibleNodes)
     else
       resetNodeGeoLookup()
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 )
 const activeEarthRenderer = ref(appStore.earthRenderer)
 const isTiledEarth = computed(() => showEarth.value && activeEarthRenderer.value === 'tiled')
@@ -858,7 +879,7 @@ onMounted(async () => {
             placement="top"
             :content="card.tooltip"
             class="min-w-0"
-            content-class="whitespace-pre px-2 py-1 left-0 -translate-x-0 leading-normal"
+            content-class="whitespace-pre-wrap max-w-[min(18rem,calc(100vw-2rem))] break-words px-2 py-1 left-0 -translate-x-0 leading-normal"
           >
             <Transition v-bind="metricSwitchTransitionProps">
               <div

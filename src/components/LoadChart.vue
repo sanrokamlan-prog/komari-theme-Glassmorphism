@@ -4,7 +4,7 @@ import type { NormalizedMetricSeries } from '@/utils/metricSeries'
 import type { RecordFormat } from '@/utils/recordHelper'
 import type { MetricQueryParams, MetricSeries, PingTaskInfo, StatusRecord } from '@/utils/rpc'
 import { Icon } from '@iconify/vue'
-import { useIntervalFn } from '@vueuse/core'
+import { useDocumentVisibility, useIntervalFn } from '@vueuse/core'
 import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
 import VChart from 'vue-echarts'
@@ -16,6 +16,7 @@ import { Empty } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { useChartTimeRange } from '@/composables/useChartTimeRange'
 import { loadNodeLoadRecords, useNodeLoadStats } from '@/composables/useNodeLoadStats'
 import { METRIC_CHART_GRID, METRIC_CHART_LEGEND } from '@/constants/chart'
 import { LOAD_RECORD_MAX_COUNT } from '@/constants/load'
@@ -96,12 +97,6 @@ interface MetricChartSeriesData {
 
 type LoadMetricKey = typeof LOAD_METRIC_KEYS[number]
 
-interface CustomRange {
-  start: dayjs.Dayjs
-  end: dayjs.Dayjs
-  hours: number
-}
-
 // 图表主题相关颜色
 const chartThemeColors = computed(() => getMetricChartTheme(isDark.value))
 
@@ -149,67 +144,27 @@ const presetViews = [
   { label: '30 天', hours: 720 },
 ]
 
-// 可用视图列表
-const availableViews = computed(() => {
-  const views: { label: string, hours?: number }[] = [{ label: '实时' }]
-  const maxHours = maxRecordPreserveTime.value
-
-  for (const v of presetViews) {
-    if (maxHours >= v.hours) {
-      views.push({ label: v.label, hours: v.hours })
-    }
-  }
-
-  const maxPreset = presetViews.at(-1)
-  if (maxPreset && maxHours > maxPreset.hours) {
-    const label = maxHours % 24 === 0
-      ? `${Math.floor(maxHours / 24)} 天`
-      : `${maxHours} 小时`
-    views.push({ label, hours: maxHours })
-  }
-  else if (maxHours > 4 && !presetViews.some(v => v.hours === maxHours)) {
-    const label = maxHours % 24 === 0
-      ? `${Math.floor(maxHours / 24)} 天`
-      : `${maxHours} 小时`
-    views.push({ label, hours: maxHours })
-  }
-
-  views.push({ label: CUSTOM_VIEW_LABEL })
-  return views
+const {
+  availableViews,
+  selectedView,
+  customStartInput,
+  customEndInput,
+  isCustomRange,
+  customRange,
+  customRangeError,
+} = useChartTimeRange({
+  presetViews,
+  maxPreserveHours: maxRecordPreserveTime,
+  includeRealtime: true,
+  realtimeLabel: '实时',
+  customLabel: CUSTOM_VIEW_LABEL,
+  minExtraHours: 4,
 })
-
-// 当前选中的视图
-const selectedView = ref<string>('实时')
-const customStartInput = ref('')
-const customEndInput = ref('')
 const selectedHours = computed(() => {
   const view = availableViews.value.find(v => v.label === selectedView.value)
   return view?.hours
 })
 const isRealtime = computed(() => selectedView.value === '实时')
-const isCustomRange = computed(() => selectedView.value === CUSTOM_VIEW_LABEL)
-const customRange = computed<CustomRange | null>(() => {
-  if (!customStartInput.value || !customEndInput.value)
-    return null
-
-  const start = dayjs(customStartInput.value)
-  const end = dayjs(customEndInput.value)
-  if (!start.isValid() || !end.isValid() || !end.isAfter(start))
-    return null
-
-  return {
-    start,
-    end,
-    hours: Math.max(1, Math.ceil(end.diff(start, 'hour', true))),
-  }
-})
-const customRangeError = computed(() => {
-  if (!isCustomRange.value || (!customStartInput.value && !customEndInput.value))
-    return ''
-  if (!customStartInput.value || !customEndInput.value)
-    return '请选择开始和结束时间'
-  return customRange.value ? '' : '结束时间必须晚于开始时间'
-})
 const effectiveHistoryHours = computed(() => isCustomRange.value ? customRange.value?.hours ?? 4 : selectedHours.value ?? 4)
 
 // 数据状态
@@ -566,6 +521,8 @@ async function loadMetricHistoryRecords(params: Pick<MetricQueryParams, 'hours' 
     max_points: METRIC_HISTORY_MAX_POINTS,
     aggregation: 'avg',
     aggregation_by_metric: {
+      'net.in.rate': 'max',
+      'net.out.rate': 'max',
       'net.total.up': 'last',
       'net.total.down': 'last',
     },
@@ -711,7 +668,12 @@ async function fetchData() {
 // ==================== 数据处理 ====================
 
 const chartData = computed(() => {
-  const data = metricData.value ?? statusToRecordFormat(remoteData.value)
+  // 后端 queryMetrics 已按 max_points (700) 完成降采样与 fill_empty，
+  // 直接使用可避免被前端 15 分钟网格二次抽稀并丢失短时峰值。
+  if (metricData.value)
+    return metricData.value
+
+  const data = statusToRecordFormat(remoteData.value)
   if (!data.length)
     return []
 
@@ -1240,7 +1202,7 @@ const networkChartOption = computed(() => ({
     nameTextStyle: { color: chartThemeColors.value.textSecondary, padding: [0, 40, 0, 0] },
     axisLabel: {
       ...baseYAxisConfig.value.axisLabel,
-      formatter: (val: number) => formatBytes(val),
+      formatter: (val: number) => `${formatBytes(val)}/s`,
     },
   },
   series: [
@@ -1518,6 +1480,8 @@ const processChartOption = computed(() => ({
 
 // ==================== 实时更新 ====================
 
+const documentVisibility = useDocumentVisibility()
+
 // 使用 VueUse 的 useIntervalFn 自动管理定时器
 const { pause: pauseRealtimeUpdate, resume: resumeRealtimeUpdate } = useIntervalFn(
   () => fetchData(),
@@ -1525,9 +1489,11 @@ const { pause: pauseRealtimeUpdate, resume: resumeRealtimeUpdate } = useInterval
   { immediate: false },
 )
 
-// 根据是否为实时模式控制定时器
-watch(isRealtime, (realtime) => {
-  if (realtime) {
+// 根据是否为实时模式及标签页可见性控制定时器，避免切到后台后继续轮询重绘
+watch([isRealtime, documentVisibility], ([realtime, visibility], previous) => {
+  if (realtime && visibility === 'visible') {
+    if (previous && previous[1] === 'hidden')
+      void fetchData()
     resumeRealtimeUpdate()
   }
   else {
@@ -1690,7 +1656,7 @@ onMounted(() => {
         <!-- 网络卡片 -->
         <CardX v-if="isChartCardEnabled('network')" size="small" class="bg-background/50 border-none hover:bg-background transition-all rounded-md" :style="getChartCardStyle('network')">
           <template #header>
-            <MetricChartHeader title="实时网络" icon="tabler:network" tone="sky">
+            <MetricChartHeader :title="isRealtime ? '实时网络' : '网络速率（峰值）'" icon="tabler:network" tone="sky">
               <div class="text-xs flex gap-2 items-baseline">
                 <span class="flex flex-row items-center justify-center gap-0.5">
                   <Icon icon="tabler:chevron-up" width="12" height="12" />
@@ -1766,9 +1732,9 @@ onMounted(() => {
           <template #header>
             <MetricChartHeader title="网络连接" icon="tabler:binary-tree" tone="amber">
               <div class="text-xs flex gap-1 items-baseline">
-                <span>TCP: {{ latestStatus?.connections ?? '-' }}</span>
+                <span>TCP: {{ latestStatus?.connections != null ? Math.round(latestStatus.connections) : '-' }}</span>
                 <span>·</span>
-                <span>UDP: {{ latestStatus?.connections_udp ?? '-' }}</span>
+                <span>UDP: {{ latestStatus?.connections_udp != null ? Math.round(latestStatus.connections_udp) : '-' }}</span>
               </div>
             </MetricChartHeader>
           </template>
@@ -1782,7 +1748,7 @@ onMounted(() => {
           <template #header>
             <MetricChartHeader title="进程" icon="tabler:activity" tone="slate">
               <span class="text-xs">
-                {{ latestStatus?.process ?? '-' }}
+                {{ latestStatus?.process != null ? Math.round(latestStatus.process) : '-' }}
               </span>
             </MetricChartHeader>
           </template>

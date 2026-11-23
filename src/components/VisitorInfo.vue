@@ -19,6 +19,8 @@ interface VisitorProvider {
 type JsonRecord = Record<string, unknown>
 
 const visitorFetchTimeout = 8000
+const visitorCacheKey = 'komari-theme-glassmorphism:visitor-info:v1'
+const visitorCacheTtlMs = 30 * 60 * 1000
 const mobileScrollIdleDelay = 700
 const mobileViewportQuery = '(max-width: 767px)'
 const appStore = useAppStore()
@@ -126,19 +128,56 @@ function dismiss() {
   dismissed.value = true
 }
 
-async function fetchVisitorData(): Promise<VisitorData | null> {
-  for (const provider of visitorProviders) {
-    const data = await fetchProviderData(provider)
-    if (data)
-      return data
+function readCachedVisitorData(): VisitorData | null {
+  try {
+    const raw = window.sessionStorage.getItem(visitorCacheKey)
+    if (!raw)
+      return null
+    const parsed = JSON.parse(raw) as { savedAt?: number, data?: VisitorData }
+    if (!parsed?.savedAt || !parsed.data || Date.now() - parsed.savedAt > visitorCacheTtlMs)
+      return null
+    return parsed.data
   }
-
-  return null
+  catch {
+    return null
+  }
 }
 
-async function fetchProviderData(provider: VisitorProvider): Promise<VisitorData | null> {
+function writeCachedVisitorData(data: VisitorData): void {
   try {
-    const data = await fetchJsonWithTimeout(provider.url)
+    window.sessionStorage.setItem(visitorCacheKey, JSON.stringify({ savedAt: Date.now(), data }))
+  }
+  catch {
+  }
+}
+
+async function fetchVisitorData(): Promise<VisitorData | null> {
+  const cached = readCachedVisitorData()
+  if (cached)
+    return cached
+
+  const raceController = new AbortController()
+  try {
+    const data = await Promise.any(
+      visitorProviders.map(async (provider) => {
+        const result = await fetchProviderData(provider, raceController.signal)
+        if (!result)
+          throw new Error(`Empty visitor data from ${provider.url}`)
+        return result
+      }),
+    )
+    raceController.abort()
+    writeCachedVisitorData(data)
+    return data
+  }
+  catch {
+    return null
+  }
+}
+
+async function fetchProviderData(provider: VisitorProvider, outerSignal?: AbortSignal): Promise<VisitorData | null> {
+  try {
+    const data = await fetchJsonWithTimeout(provider.url, outerSignal)
     return provider.normalize(data)
   }
   catch {
@@ -146,8 +185,10 @@ async function fetchProviderData(provider: VisitorProvider): Promise<VisitorData
   }
 }
 
-async function fetchJsonWithTimeout(url: string): Promise<unknown> {
+async function fetchJsonWithTimeout(url: string, outerSignal?: AbortSignal): Promise<unknown> {
   const controller = new AbortController()
+  const onOuterAbort = () => controller.abort()
+  outerSignal?.addEventListener('abort', onOuterAbort, { once: true })
   const timeoutId = window.setTimeout(() => controller.abort(), visitorFetchTimeout)
 
   try {
@@ -165,6 +206,7 @@ async function fetchJsonWithTimeout(url: string): Promise<unknown> {
   }
   finally {
     window.clearTimeout(timeoutId)
+    outerSignal?.removeEventListener('abort', onOuterAbort)
   }
 }
 

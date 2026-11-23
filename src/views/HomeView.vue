@@ -3,7 +3,7 @@ import type { PermissionKey } from '@/services/auth.service'
 import type { HomeQuickControlKey } from '@/stores/app'
 import type { NodeData } from '@/stores/nodes'
 import { Icon } from '@iconify/vue'
-import { useDebounceFn } from '@vueuse/core'
+import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { computed, defineAsyncComponent, nextTick, onActivated, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import DeferredRender from '@/components/DeferredRender.vue'
@@ -82,6 +82,9 @@ onDeactivated(() => {
 
 const searchText = ref('')
 const debouncedSearchText = ref('')
+const searchFocused = ref(false)
+const searchInputWrapRef = ref<HTMLElement | null>(null)
+const isSearchExpanded = computed(() => searchFocused.value || Boolean(searchText.value))
 const activeHomeTool = ref<HomeToolKey>('nodes')
 const activeQuickControl = ref<HomeQuickControlKey | null>(null)
 const exchangeRates = ref(financeHelper.DEFAULT_EXCHANGE_RATES)
@@ -231,21 +234,6 @@ function getQuickControlNodes(nodes: NodeData[], control: HomeQuickControlKey | 
   return placeOfflineNodesLast(result)
 }
 
-function getQuickControlCount(nodes: NodeData[], control: HomeQuickControlKey): number {
-  switch (control) {
-    case 'favorite':
-      return nodes.reduce((count, node) => count + (appStore.isFavoriteNode(node.uuid) ? 1 : 0), 0)
-    case 'offline':
-      return nodes.reduce((count, node) => count + (node.online ? 0 : 1), 0)
-    case 'highLoad':
-      return nodes.reduce((count, node) => count + (isHighLoadNode(node, appStore.homeHighLoadThreshold) ? 1 : 0), 0)
-    case 'expiring':
-      return nodes.reduce((count, node) => count + (isExpiringNode(node, appStore.homeExpiringDays) ? 1 : 0), 0)
-    default:
-      return nodes.length
-  }
-}
-
 const groupNodeList = computed(() => {
   const selectedGroup = appStore.nodeSelectedGroup
   if (selectedGroup === 'all')
@@ -253,13 +241,15 @@ const groupNodeList = computed(() => {
   return nodesStore.visibleNodes.filter(node => node.groups.includes(selectedGroup))
 })
 
-const nodeList = computed(() => {
-  let filtered = groupNodeList.value
-  if (debouncedSearchText.value.trim()) {
-    filtered = filtered.filter(n => isNodeMatchSearch(n, debouncedSearchText.value))
-  }
-  return getQuickControlNodes(filtered, activeQuickControl.value)
+const searchedNodeList = computed(() => {
+  const base = groupNodeList.value
+  const keyword = debouncedSearchText.value.trim()
+  if (!keyword)
+    return base
+  return base.filter(n => isNodeMatchSearch(n, keyword))
 })
+
+const nodeList = computed(() => getQuickControlNodes(searchedNodeList.value, activeQuickControl.value))
 
 const isDenseNodeGrid = computed(() => appStore.nodeViewMode === 'card' && nodeList.value.length > denseNodeAppearThreshold)
 const enableNodeCardTransition = computed(() => !appStore.disablePageAnimation && !isDenseNodeGrid.value)
@@ -281,13 +271,44 @@ const deferredNodeCardHeight = computed(() => {
 })
 
 const quickControlCounts = computed<Record<HomeQuickControlKey, number>>(() => {
-  let base = groupNodeList.value
-  if (debouncedSearchText.value.trim())
-    base = base.filter(n => isNodeMatchSearch(n, debouncedSearchText.value))
+  const base = searchedNodeList.value
+  const total = base.length
+  let favorite = 0
+  let offline = 0
+  let highLoad = 0
+  let expiring = 0
+
+  for (const node of base) {
+    if (appStore.isFavoriteNode(node.uuid))
+      favorite += 1
+    if (!node.online)
+      offline += 1
+    if (isHighLoadNode(node, appStore.homeHighLoadThreshold))
+      highLoad += 1
+    if (isExpiringNode(node, appStore.homeExpiringDays))
+      expiring += 1
+  }
 
   const counts = {} as Record<HomeQuickControlKey, number>
-  for (const key of quickControlKeys.value)
-    counts[key] = getQuickControlCount(base, key)
+  for (const key of quickControlKeys.value) {
+    switch (key) {
+      case 'favorite':
+        counts[key] = favorite
+        break
+      case 'offline':
+        counts[key] = offline
+        break
+      case 'highLoad':
+        counts[key] = highLoad
+        break
+      case 'expiring':
+        counts[key] = expiring
+        break
+      default:
+        counts[key] = total
+        break
+    }
+  }
   return counts
 })
 
@@ -299,10 +320,38 @@ const emptyDescription = computed(() => {
   return '暂无节点'
 })
 
+function focusSearchInput() {
+  searchFocused.value = true
+  nextTick(() => {
+    const input = searchInputWrapRef.value?.querySelector('input')
+    input?.focus()
+  })
+}
+
+function handleSearchBlur() {
+  if (!searchText.value)
+    searchFocused.value = false
+}
+
 function clearSearch() {
   searchText.value = ''
   debouncedSearchText.value = ''
+  searchFocused.value = false
+  const input = searchInputWrapRef.value?.querySelector('input')
+  input?.blur()
 }
+
+useEventListener(window, 'keydown', (event: KeyboardEvent) => {
+  if (!isViewActive.value)
+    return
+  const target = event.target as HTMLElement | null
+  const isEditable = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+  if ((event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey && !isEditable)
+    || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k')) {
+    event.preventDefault()
+    focusSearchInput()
+  }
+})
 
 const nodeListSortResetKey = computed(() => {
   return `${appStore.nodeSelectedGroup}|${debouncedSearchText.value.trim()}|${activeQuickControl.value ?? 'all'}`
@@ -454,8 +503,11 @@ const nodeCardGridClass = computed(() => {
       <div class="nodes min-w-0">
         <Tabs v-model="appStore.nodeSelectedGroup" class="w-full flex-col gap-4">
           <div class="flex flex-col gap-2 xl:flex-row xl:items-center">
-            <div class="home-controls-scroll min-w-0 overflow-x-auto overscroll-x-contain rounded-sm pointer-events-auto touch-pan-x">
-              <div class="flex w-max gap-2">
+            <div
+              class="home-controls-scroll min-w-0 overflow-x-auto overscroll-x-contain rounded-sm pointer-events-auto touch-pan-x"
+              :class="!appStore.hideGeneralCard && showQuickControls && activeHomeTool === 'nodes' && 'xl:min-w-[calc(50%-0.25rem)]'"
+            >
+              <div class="flex min-w-full w-max gap-2">
                 <TabsList class="w-max h-8 bg-background/50 backdrop-blur-xl rounded-md pointer-events-auto">
                   <TabsTrigger
                     v-for="g in groups" :key="g.name" :value="g.name"
@@ -468,7 +520,7 @@ const nodeCardGridClass = computed(() => {
 
                 <div
                   v-if="showQuickControls && activeHomeTool === 'nodes'"
-                  class="flex h-8 w-max items-center gap-1 rounded-md bg-background/50 px-1 backdrop-blur-xl pointer-events-auto"
+                  class="flex h-8 flex-1 w-max items-center justify-between gap-1 rounded-md bg-background/50 px-1 backdrop-blur-xl pointer-events-auto"
                 >
                   <button
                     v-for="control in quickControls" :key="control.key"
@@ -520,24 +572,47 @@ const nodeCardGridClass = computed(() => {
               >
                 <Icon icon="tabler:table" :width="14" :height="14" />
               </Button>
-              <div class="relative z-1 h-8" :class="searchText ? 'w-full sm:w-60' : 'w-8'">
-                <div class="absolute top-0 right-0 w-full">
+              <div
+                ref="searchInputWrapRef"
+                class="relative z-1 h-8 transition-[width] duration-200 ease-out"
+                :class="isSearchExpanded ? 'w-full sm:w-64' : 'w-8'"
+              >
+                <button
+                  v-if="!isSearchExpanded"
+                  type="button"
+                  aria-label="展开搜索节点（快捷键 /）"
+                  title="搜索节点（支持地区、厂商、IP、规格、-排除、|或匹配；快捷键 /）"
+                  class="flex size-8 items-center justify-center rounded-md bg-background/50 text-foreground backdrop-blur-xs transition-colors hover:bg-background/60"
+                  @click="focusSearchInput"
+                >
+                  <Icon icon="tabler:search" :width="14" :height="14" />
+                </button>
+                <div v-else class="relative h-8 w-full">
                   <Input
-                    v-model="searchText" placeholder="搜索名称、地区、IP、CPU"
+                    v-model="searchText"
+                    placeholder="名称 / 地区 / 厂商 / IP / 2c 4g"
                     aria-label="搜索节点"
-                    class="transition-all border-none shadow-none h-8 bg-background/50 backdrop-blur-xs rounded-md hover:!bg-background/60 focus:!pl-7.5 focus:placeholder:!text-muted-foreground focus:!bg-background/80 focus:!ring-slate-500/10"
-                    :class="searchText ? '!w-full sm:!w-60 !pl-7.5 pr-7 placeholder:!text-muted-foreground' : 'w-8 placeholder:text-transparent focus:!w-52 sm:focus:!w-60'"
+                    class="h-8 w-full rounded-md border-none bg-background/70 pl-7.5 shadow-none backdrop-blur-xs transition-colors placeholder:text-muted-foreground hover:!bg-background/80 focus:!bg-background/90 focus:!ring-slate-500/10"
+                    :class="searchText ? 'pr-16' : 'pr-7'"
+                    @focus="searchFocused = true"
+                    @blur="handleSearchBlur"
                     @keydown.esc.prevent="clearSearch"
                   />
                   <Icon
                     icon="tabler:search" :width="14" :height="14"
-                    class="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+                    class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
                   />
-                  <button
+                  <span
                     v-if="searchText"
+                    class="pointer-events-none absolute right-7 top-1/2 -translate-y-1/2 rounded bg-slate-500/10 px-1 py-0.5 text-[10px] tabular-nums text-muted-foreground"
+                  >
+                    {{ searchedNodeList.length }}/{{ groupNodeList.length }}
+                  </span>
+                  <button
                     type="button"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    aria-label="清空搜索"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                    :aria-label="searchText ? '清空搜索' : '收起搜索'"
+                    @mousedown.prevent
                     @click="clearSearch"
                   >
                     <Icon icon="tabler:x" :width="14" :height="14" />

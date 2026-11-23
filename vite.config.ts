@@ -23,11 +23,18 @@ interface ThemeManifest {
 const themeJsonPath = resolve(__dirname, 'komari-theme.json')
 const devApiTarget = process.env.VITE_API_TARGET || 'http://127.0.0.1:25774'
 
+let cachedThemeManifest: ThemeManifest | null = null
+let cachedCommitHash: string | null = null
+
 function readThemeManifest(): ThemeManifest {
+  if (cachedThemeManifest)
+    return cachedThemeManifest
+
   if (!existsSync(themeJsonPath))
     throw new Error('komari-theme.json not found')
 
-  return JSON.parse(readFileSync(themeJsonPath, 'utf-8')) as ThemeManifest
+  cachedThemeManifest = JSON.parse(readFileSync(themeJsonPath, 'utf-8')) as ThemeManifest
+  return cachedThemeManifest
 }
 
 function getThemeVersion(): string {
@@ -40,12 +47,16 @@ function getThemeVersion(): string {
 }
 
 function getCommitHash(): string {
+  if (cachedCommitHash !== null)
+    return cachedCommitHash
+
   try {
-    return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
+    cachedCommitHash = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
   }
   catch {
-    return 'unknown'
+    cachedCommitHash = 'unknown'
   }
+  return cachedCommitHash
 }
 
 /**

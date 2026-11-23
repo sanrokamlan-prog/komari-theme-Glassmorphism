@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CustomTimeRange } from '@/composables/useChartTimeRange'
 import type { MetricSeries, PingMetricTaskStats, PingRecord, PingTaskInfo } from '@/utils/rpc'
 import { Icon } from '@iconify/vue'
 import dayjs from 'dayjs'
@@ -10,12 +11,13 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useChartTimeRange } from '@/composables/useChartTimeRange'
 import { useTouchTooltipTrigger } from '@/composables/useTouchTooltipTrigger'
 import { PING_RECORD_MAX_COUNT } from '@/constants/load'
 import { loadPingRecordsWithTasks } from '@/services/history.service'
 import { loadPingMetricStats, loadPublicPingTasks, queryMetrics } from '@/services/metrics.service'
 import { useAppStore } from '@/stores/app'
-import { ACCESSIBLE_LINE_TYPES, getChartSeriesPalette } from '@/utils/chartPalette'
+import { ACCESSIBLE_LINE_TYPES, getChartSeriesPalette, getMetricChartTheme } from '@/utils/chartPalette'
 import { isPingMetric, normalizeMetricSeriesList, orderPingTasksByBackend, PING_LATENCY_METRIC, pingTaskId, pingTaskName } from '@/utils/metricSeries'
 import { resolvePingAxisScale } from '@/utils/pingChartAxisScale'
 import { escapePingTooltip, pingChartTaskLabels } from '@/utils/pingChartPresentation'
@@ -29,23 +31,8 @@ const props = defineProps<{
 const appStore = useAppStore()
 const isDark = computed(() => appStore.isDark)
 
-interface CustomRange {
-  start: dayjs.Dayjs
-  end: dayjs.Dayjs
-  hours: number
-}
-
 // 图表主题相关颜色
-const chartThemeColors = computed(() => ({
-  text: isDark.value ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
-  textSecondary: isDark.value ? 'rgba(255, 255, 255, 0.55)' : 'rgba(0, 0, 0, 0.55)',
-  textTertiary: isDark.value ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.35)',
-  borderColor: isDark.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-  splitLineColor: isDark.value ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)',
-  tooltipBg: isDark.value ? 'rgba(40, 40, 40, 0.95)' : 'rgba(255, 255, 255, 0.8)',
-  tooltipShadow: isDark.value ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.06)',
-  crosshairColor: isDark.value ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-}))
+const chartThemeColors = computed(() => getMetricChartTheme(isDark.value))
 
 const chartColors = reactive(getChartSeriesPalette(appStore.colorVisionFriendly))
 
@@ -69,63 +56,23 @@ const presetViews = [
 const CUSTOM_VIEW_LABEL = '自定义'
 const DEFAULT_CUSTOM_RANGE_HOURS = 24
 
-// 可用视图列表
-const availableViews = computed(() => {
-  const views: { label: string, hours?: number }[] = []
-  const maxHours = maxPingRecordPreserveTime.value
-
-  for (const v of presetViews) {
-    if (maxHours >= v.hours) {
-      views.push(v)
-    }
-  }
-
-  const maxPreset = presetViews.at(-1)
-  if (maxPreset && maxHours > maxPreset.hours) {
-    const label = maxHours % 24 === 0
-      ? `${Math.floor(maxHours / 24)} 天`
-      : `${maxHours} 小时`
-    views.push({ label, hours: maxHours })
-  }
-  else if (maxHours > 1 && !presetViews.some(v => v.hours === maxHours)) {
-    const label = maxHours % 24 === 0
-      ? `${Math.floor(maxHours / 24)} 天`
-      : `${maxHours} 小时`
-    views.push({ label, hours: maxHours })
-  }
-
-  views.push({ label: CUSTOM_VIEW_LABEL })
-  return views
+const {
+  availableViews,
+  selectedView,
+  customStartInput,
+  customEndInput,
+  isCustomRange,
+  customRange,
+  customRangeError,
+  ensureDefaultCustomRange,
+} = useChartTimeRange({
+  presetViews,
+  maxPreserveHours: maxPingRecordPreserveTime,
+  customLabel: CUSTOM_VIEW_LABEL,
+  defaultCustomHours: DEFAULT_CUSTOM_RANGE_HOURS,
+  minExtraHours: 1,
 })
-
-// 当前选中的视图
-const selectedView = ref<string>('')
-const customStartInput = ref('')
-const customEndInput = ref('')
-const appliedCustomRange = shallowRef<CustomRange | null>(null)
-const isCustomRange = computed(() => selectedView.value === CUSTOM_VIEW_LABEL)
-const customRange = computed<CustomRange | null>(() => {
-  if (!customStartInput.value || !customEndInput.value)
-    return null
-
-  const start = dayjs(customStartInput.value)
-  const end = dayjs(customEndInput.value)
-  if (!start.isValid() || !end.isValid() || !end.isAfter(start))
-    return null
-
-  return {
-    start,
-    end,
-    hours: Math.max(1, Math.ceil(end.diff(start, 'hour', true))),
-  }
-})
-const customRangeError = computed(() => {
-  if (!isCustomRange.value || (!customStartInput.value && !customEndInput.value))
-    return ''
-  if (!customStartInput.value || !customEndInput.value)
-    return '请选择开始和结束时间'
-  return customRange.value ? '' : '结束时间必须晚于开始时间'
-})
+const appliedCustomRange = shallowRef<CustomTimeRange | null>(null)
 const selectedHours = computed(() => {
   if (isCustomRange.value)
     return appliedCustomRange.value?.hours ?? customRange.value?.hours ?? DEFAULT_CUSTOM_RANGE_HOURS
@@ -133,16 +80,6 @@ const selectedHours = computed(() => {
   const view = availableViews.value.find(v => v.label === selectedView.value)
   return view?.hours || 1
 })
-
-function ensureDefaultCustomRange() {
-  if (customStartInput.value && customEndInput.value)
-    return
-
-  const end = dayjs()
-  const hours = Math.max(1, Math.min(DEFAULT_CUSTOM_RANGE_HOURS, maxPingRecordPreserveTime.value))
-  customStartInput.value = end.subtract(hours, 'hour').format('YYYY-MM-DDTHH:mm')
-  customEndInput.value = end.format('YYYY-MM-DDTHH:mm')
-}
 
 // 初始化默认视图
 watch(availableViews, (views) => {
@@ -533,8 +470,9 @@ const latestValues = computed(() => {
   for (const task of tasks.value) {
     for (let i = remoteData.value.length - 1; i >= 0; i--) {
       const rec = remoteData.value[i]
-      if (rec && rec.task_id === task.id && rec.value >= 0) {
-        latestMap.set(task.id, rec.value)
+      if (rec && rec.task_id === task.id) {
+        // 若最近一次探测已丢包（value < 0），不再回溯数小时前的历史成功值误导用户
+        latestMap.set(task.id, rec.value >= 0 ? rec.value : null)
         break
       }
     }

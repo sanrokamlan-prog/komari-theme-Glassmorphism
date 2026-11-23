@@ -46,6 +46,7 @@ class InitManager {
   private pollTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private unsubscribeWsClose: (() => void) | null = null
+  private visibilityListener: (() => void) | null = null
   private isPolling = false
   private destroyed = false
   private postFailureCount = 0
@@ -102,25 +103,40 @@ class InitManager {
 
   /**
    * 独立执行启动请求，避免任一请求失败阻断其他初始化任务。
+   * 节点数据拉取成功后立即解除启动等待，不被健康检查的退避重试阻塞。
    */
   private async runStartupRequests(): Promise<boolean> {
-    const [healthResult, , , nodesResult] = await Promise.allSettled([
-      this.healthCheck(),
+    const healthController = new AbortController()
+    const healthPromise = this.healthCheck(healthController.signal)
+    const nodesPromise = this.fetchNodesData().then(
+      () => {
+        healthController.abort()
+      },
+      (error) => {
+        throw error
+      },
+    )
+
+    const [, , nodesResult] = await Promise.allSettled([
       this.fetchPublicSettings(),
       this.fetchUserInfo(),
-      this.fetchNodesData(),
+      nodesPromise,
     ])
+
+    const nodesAvailable = nodesResult.status === 'fulfilled'
+    const healthResult = nodesAvailable
+      ? null
+      : (await Promise.allSettled([healthPromise]))[0]
 
     if (this.destroyed || this.redirectingToAdmin)
       return false
 
-    const nodesAvailable = nodesResult.status === 'fulfilled'
     this.appStore.connectionError = !nodesAvailable
 
     if (nodesAvailable) {
       this.postFailureCount = 0
     }
-    else if (healthResult.status === 'rejected') {
+    else if (healthResult?.status === 'rejected') {
       console.error('[InitManager] Backend health check and initial node load both failed')
     }
 
@@ -145,11 +161,16 @@ class InitManager {
   /**
    * 健康检查 - 测试后端服务是否正常
    */
-  private async healthCheck(): Promise<void> {
+  private async healthCheck(cancelSignal?: AbortSignal): Promise<void> {
     let lastError: unknown
 
     for (let attempt = 1; attempt <= this.config.healthCheckAttempts; attempt++) {
+      if (cancelSignal?.aborted || this.destroyed)
+        return
+
       const controller = new AbortController()
+      const onCancel = () => controller.abort()
+      cancelSignal?.addEventListener('abort', onCancel, { once: true })
       const timeoutId = setTimeout(() => controller.abort(), this.config.healthCheckTimeout)
 
       try {
@@ -160,6 +181,9 @@ class InitManager {
         return
       }
       catch (error) {
+        if (cancelSignal?.aborted || this.destroyed)
+          return
+
         if (error instanceof RpcError && error.code === 401) {
           console.warn('[InitManager] Private site detected, redirecting to /admin')
           this.redirectingToAdmin = true
@@ -170,16 +194,26 @@ class InitManager {
         }
 
         lastError = error
-        if (attempt < this.config.healthCheckAttempts && !this.destroyed) {
+        if (attempt < this.config.healthCheckAttempts && !this.destroyed && !cancelSignal?.aborted) {
           const retryDelay = this.config.healthCheckRetryInterval * 2 ** (attempt - 1)
           console.warn(`[InitManager] Health check attempt ${attempt} failed, retrying in ${retryDelay}ms`, error)
-          await new Promise(resolve => setTimeout(resolve, retryDelay))
+          await new Promise<void>((resolve) => {
+            const delayTimer = setTimeout(resolve, retryDelay)
+            cancelSignal?.addEventListener('abort', () => {
+              clearTimeout(delayTimer)
+              resolve()
+            }, { once: true })
+          })
         }
       }
       finally {
         clearTimeout(timeoutId)
+        cancelSignal?.removeEventListener('abort', onCancel)
       }
     }
+
+    if (cancelSignal?.aborted || this.destroyed)
+      return
 
     console.error('[InitManager] Health check failed after retries:', lastError)
     throw new Error('Backend service unavailable')
@@ -371,23 +405,62 @@ class InitManager {
     window.$message?.warning('WebSocket 无法连接，尝试回落 POST 模式。')
   }
 
+  private isDocumentHidden(): boolean {
+    return typeof document !== 'undefined' && document.visibilityState === 'hidden'
+  }
+
+  private bindVisibilityListener(): void {
+    if (typeof document === 'undefined' || this.visibilityListener)
+      return
+
+    this.visibilityListener = () => {
+      if (this.destroyed)
+        return
+
+      if (this.isDocumentHidden()) {
+        this.stopPolling()
+        return
+      }
+
+      // 页面回到前台时立即拉取一次最新状态并恢复定时轮询
+      this.stopPolling()
+      void this.poll().finally(() => {
+        if (!this.destroyed && !this.isDocumentHidden())
+          this.scheduleNextPoll()
+      })
+    }
+
+    document.addEventListener('visibilitychange', this.visibilityListener)
+  }
+
+  private unbindVisibilityListener(): void {
+    if (typeof document !== 'undefined' && this.visibilityListener) {
+      document.removeEventListener('visibilitychange', this.visibilityListener)
+      this.visibilityListener = null
+    }
+  }
+
+  private scheduleNextPoll(): void {
+    if (this.destroyed || this.isDocumentHidden())
+      return
+
+    this.stopPolling()
+    this.pollTimer = setTimeout(async () => {
+      this.pollTimer = null
+      if (this.destroyed || this.isDocumentHidden())
+        return
+      await this.poll()
+      if (!this.destroyed && !this.isDocumentHidden())
+        this.scheduleNextPoll()
+    }, this.getPollInterval())
+  }
+
   /**
    * 开始轮询
    */
   private startPolling(): void {
-    if (this.pollTimer) {
-      clearTimeout(this.pollTimer)
-    }
-
-    const schedulePoll = () => {
-      this.pollTimer = setTimeout(async () => {
-        await this.poll()
-        if (!this.destroyed)
-          schedulePoll()
-      }, this.getPollInterval())
-    }
-
-    schedulePoll()
+    this.bindVisibilityListener()
+    this.scheduleNextPoll()
   }
 
   /**
@@ -453,6 +526,7 @@ class InitManager {
    */
   destroy(): void {
     this.destroyed = true
+    this.unbindVisibilityListener()
     this.stopPolling()
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)

@@ -22,9 +22,9 @@ export interface IpGeo {
 }
 
 const CACHE_PREFIX = 'komari-theme-emerald:ipgeo'
-const CACHE_VERSION = 5
+const CACHE_VERSION = 6
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 天
-const NEGATIVE_CACHE_TTL_MS = 6 * 60 * 60 * 1000 // 6 小时
+const NEGATIVE_CACHE_TTL_MS = 10 * 60 * 1000 // 10 分钟（避免首页批量查询偶发限流锁死 6 小时）
 const IP_GEO_TIMEOUT_MS = 5000
 const IP_PLACEHOLDER_REGEX = /\{ip\}/gi
 const PROVIDER_BACKOFF_BASE_MS = 60 * 1000
@@ -166,7 +166,7 @@ const fromIpSb: Provider = async (ip) => {
   return {
     lat,
     lng,
-    city: typeof d.city === 'string' ? d.city : undefined,
+    city: pickString(d.city, d.region, d.country),
     countryCode: typeof d.country_code === 'string' ? d.country_code : undefined,
     org: pickString(d.organization, d.asn_organization, d.isp),
     asn: typeof d.asn === 'number' ? `AS${d.asn}` : pickString(d.asn),
@@ -190,7 +190,7 @@ const fromIpinfo: Provider = async (ip) => {
   return {
     lat,
     lng,
-    city: typeof d.city === 'string' ? d.city : undefined,
+    city: pickString(d.city, d.region),
     countryCode: typeof d.country === 'string' ? d.country : undefined,
     org,
     asn: org?.match(ASN_ORG_PREFIX_REGEX)?.[0],
@@ -212,7 +212,7 @@ const fromIpapiCo: Provider = async (ip) => {
   return {
     lat,
     lng,
-    city: typeof d.city === 'string' ? d.city : undefined,
+    city: pickString(d.city, d.region, d.country_name),
     countryCode: typeof d.country_code === 'string' ? d.country_code : undefined,
     org: pickString(d.org),
     asn: pickString(d.asn),
@@ -235,7 +235,7 @@ const fromIpwhois: Provider = async (ip) => {
   return {
     lat,
     lng,
-    city: typeof d.city === 'string' ? d.city : undefined,
+    city: pickString(d.city, d.region, d.country),
     countryCode: typeof d.country_code === 'string' ? d.country_code : undefined,
     org: pickString(conn.org, conn.isp),
     asn: typeof conn.asn === 'number' ? `AS${conn.asn}` : pickString(conn.asn),
@@ -280,7 +280,7 @@ const fromGenericJson: Provider = async (ip, template) => {
   return {
     lat,
     lng,
-    city: pickString(d.city),
+    city: pickString(d.city, d.region, d.country_name, d.country),
     countryCode: pickString(d.country_code, d.country),
     org: pickString(d.org, d.organization, d.isp, conn.org, conn.isp),
     asn: pickString(rawAsn, conn.asn),
@@ -324,11 +324,35 @@ function markProviderFailure(id: string): void {
 
 // 同一 IP 的并发查询去重
 const inflight = new Map<string, Promise<IpGeo | null>>()
+const memoryGeoCache = new Map<string, IpGeo>()
+
+/**
+ * 同步读取已缓存的 IP 地理位置（内存优先，其次 localStorage），供搜索过滤等同步路径使用。
+ */
+export function getCachedIpGeo(ip: string | undefined): IpGeo | null {
+  const normalizedIp = ip?.trim()
+  if (!normalizedIp)
+    return null
+
+  const mem = memoryGeoCache.get(normalizedIp)
+  if (mem)
+    return mem
+
+  const urls = [...activeProviderUrls]
+  if (!urls.length)
+    return null
+  const cached = readCache(normalizedIp, JSON.stringify(urls))
+  if (cached && !cached.negative && cached.geo) {
+    memoryGeoCache.set(normalizedIp, cached.geo)
+    return cached.geo
+  }
+  return null
+}
 
 /**
  * 查询某个 IP 的地理坐标（含缓存与多服务回退）。失败返回 null。
  */
-export async function lookupIpGeo(ip: string): Promise<IpGeo | null> {
+export async function lookupIpGeo(ip: string, options: { bypassNegativeCache?: boolean } = {}): Promise<IpGeo | null> {
   const normalizedIp = ip.trim()
   const urls = [...activeProviderUrls]
   if (!isPublicIp(normalizedIp) || !urls.length)
@@ -337,8 +361,11 @@ export async function lookupIpGeo(ip: string): Promise<IpGeo | null> {
   const configuration = JSON.stringify(urls)
   const key = cacheKey(normalizedIp, configuration)
   const cached = readCache(normalizedIp, configuration)
-  if (cached)
+  if (cached && (!cached.negative || !options.bypassNegativeCache)) {
+    if (cached.geo)
+      memoryGeoCache.set(normalizedIp, cached.geo)
     return cached.geo
+  }
 
   const existing = inflight.get(key)
   if (existing)
@@ -351,6 +378,7 @@ export async function lookupIpGeo(ip: string): Promise<IpGeo | null> {
         const geo = await provider.lookup(normalizedIp, provider.template)
         if (geo && isValidGeo(geo)) {
           markProviderSuccess(provider.id)
+          memoryGeoCache.set(normalizedIp, geo)
           writeCache(normalizedIp, configuration, geo)
           return geo
         }

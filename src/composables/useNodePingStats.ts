@@ -11,6 +11,7 @@ import { isPingMetric, normalizeMetricSeriesList, PING_LATENCY_METRIC, PING_LOSS
 export interface NodePingHistoryPoint {
   time: string
   latency: number | null
+  maxLatency?: number | null
   loss: number | null
 }
 
@@ -19,6 +20,7 @@ export interface NodePingStatsState {
   avgLoss: number
   avgVolatility: number
   history: NodePingHistoryPoint[]
+  sparklineHistory: NodePingHistoryPoint[]
   hasData: boolean
 }
 
@@ -27,6 +29,7 @@ interface PingRecord {
   task_id: number
   time: string
   value: number
+  count?: number
 }
 
 interface MetricLossPoint {
@@ -60,7 +63,8 @@ interface SharedPingRecordsEntry {
 }
 
 const HISTORY_BUCKET_COUNT = 20
-const CACHE_VERSION = 8
+const SPARKLINE_BUCKET_COUNT = 60
+const CACHE_VERSION = 9
 const CACHE_KEY_PREFIX = 'komari-theme-emerald:node-ping-stats'
 const FULL_LOSS_EPSILON = 1e-6
 const PING_RECORD_REFRESH_INTERVAL_MS = 60_000
@@ -77,6 +81,7 @@ function createEmptyStats(): NodePingStatsState {
     avgLoss: 0,
     avgVolatility: 0,
     history: [],
+    sparklineHistory: [],
     hasData: false,
   }
 }
@@ -157,6 +162,8 @@ function isValidStatsState(value: unknown): value is NodePingStatsState {
     && typeof state.hasData === 'boolean'
     && Array.isArray(state.history)
     && state.history.every(isValidHistoryPoint)
+    && Array.isArray(state.sparklineHistory)
+    && state.sparklineHistory.every(isValidHistoryPoint)
 }
 
 function readStatsCache(uuid: string, hours: number, maxCount?: number): NodePingStatsState | null {
@@ -311,6 +318,7 @@ async function loadPingMetricRecords(nodeUuid: string, hours: number, maxCount?:
           task_id: taskId,
           time: point.time,
           value: point.value,
+          count: isFiniteNumber(point.count) && point.count > 0 ? point.count : 1,
         })
       }
     }
@@ -426,7 +434,11 @@ function retainSharedPingRecordsEntry(hours: number, maxCount?: number, uuid?: s
   }
 }
 
-function buildPingHistory(records: PingRecord[], metricLossPoints?: MetricLossPoint[]): NodePingHistoryPoint[] {
+function buildPingHistory(
+  records: PingRecord[],
+  metricLossPoints?: MetricLossPoint[],
+  options: { hours?: number, bucketCount?: number } = {},
+): NodePingHistoryPoint[] {
   const sortedRecords = records
     .map((record) => {
       const timestamp = new Date(record.time).getTime()
@@ -442,28 +454,38 @@ function buildPingHistory(records: PingRecord[], metricLossPoints?: MetricLossPo
   if (!sortedRecords.length && !sortedMetricLossPoints.length)
     return []
 
-  const firstTime = Math.min(
-    sortedRecords[0]?.timestamp ?? Number.POSITIVE_INFINITY,
-    sortedMetricLossPoints[0]?.timestamp ?? Number.POSITIVE_INFINITY,
-  )
-  const lastTime = Math.max(
+  const lastSampleTime = Math.max(
     sortedRecords.at(-1)?.timestamp ?? Number.NEGATIVE_INFINITY,
     sortedMetricLossPoints.at(-1)?.timestamp ?? Number.NEGATIVE_INFINITY,
   )
-  const bucketCount = Math.min(HISTORY_BUCKET_COUNT, Math.max(sortedRecords.length, sortedMetricLossPoints.length))
-  const bucketSize = Math.max(1, (lastTime - firstTime) / bucketCount)
+  const windowDurationMs = Math.max(1, options.hours ?? 1) * 3_600_000
+  const now = Date.now()
+  // 实时场景下固定锚定 [now - hours, now]，让断采或刚上线区间真实留白；
+  // 静态历史数据或测试夹具时间戳远离当前时间时回退到 lastSampleTime。
+  const windowEnd = now >= lastSampleTime && now - lastSampleTime <= windowDurationMs
+    ? now
+    : lastSampleTime
+  const windowStart = windowEnd - windowDurationMs
+  const bucketCount = Math.max(1, options.bucketCount ?? HISTORY_BUCKET_COUNT)
+  const bucketSize = Math.max(1, (windowEnd - windowStart) / bucketCount)
 
   const history: NodePingHistoryPoint[] = []
   let recordIndex = 0
   let metricLossPointIndex = 0
 
+  while (recordIndex < sortedRecords.length && sortedRecords[recordIndex]!.timestamp < windowStart)
+    recordIndex += 1
+  while (metricLossPointIndex < sortedMetricLossPoints.length && sortedMetricLossPoints[metricLossPointIndex]!.timestamp < windowStart)
+    metricLossPointIndex += 1
+
   for (let index = 0; index < bucketCount; index++) {
-    const startTime = firstTime + bucketSize * index
-    const endTime = index === bucketCount - 1 ? lastTime + 1 : startTime + bucketSize
+    const startTime = windowStart + bucketSize * index
+    const endTime = index === bucketCount - 1 ? windowEnd + 1 : startTime + bucketSize
     let totalCount = 0
     let lostCount = 0
     let latencySum = 0
-    let latencyCount = 0
+    let latencyWeight = 0
+    let maxLatency: number | null = null
     let metricLossSum = 0
     let metricLossCount = 0
 
@@ -473,13 +495,15 @@ function buildPingHistory(records: PingRecord[], metricLossPoints?: MetricLossPo
         break
 
       if (record.timestamp >= startTime) {
-        totalCount += 1
+        const weight = isFiniteNumber(record.count) && record.count > 0 ? record.count : 1
+        totalCount += weight
         if (record.value >= 0) {
-          latencySum += record.value
-          latencyCount += 1
+          latencySum += record.value * weight
+          latencyWeight += weight
+          maxLatency = maxLatency === null ? record.value : Math.max(maxLatency, record.value)
         }
         else {
-          lostCount += 1
+          lostCount += weight
         }
       }
       recordIndex += 1
@@ -499,7 +523,8 @@ function buildPingHistory(records: PingRecord[], metricLossPoints?: MetricLossPo
 
     history.push({
       time: new Date(startTime).toISOString(),
-      latency: latencyCount ? latencySum / latencyCount : null,
+      latency: latencyWeight ? latencySum / latencyWeight : null,
+      maxLatency,
       loss: metricLossPoints
         ? (metricLossCount ? metricLossSum / metricLossCount * 100 : null)
         : (totalCount ? lostCount / totalCount * 100 : null),
@@ -528,10 +553,17 @@ function getPercentile(values: number[], percentile: number): number | null {
   return lowerValue + (upperValue - lowerValue) * (position - lowerIndex)
 }
 
-function buildStats(records: PingRecord[], metricStats?: PingMetricTaskStats[], metricLossPoints?: MetricLossPoint[]): NodePingStatsState {
+function buildStats(
+  records: PingRecord[],
+  hours: number,
+  metricStats?: PingMetricTaskStats[],
+  metricLossPoints?: MetricLossPoint[],
+): NodePingStatsState {
   const statsWithSamples = (metricStats ?? []).filter(stat => stat.total > 0)
   if (statsWithSamples.length) {
-    const history = buildPingHistory(records.filter(record => record.value >= 0), metricLossPoints)
+    const validRecords = records.filter(record => record.value >= 0)
+    const history = buildPingHistory(validRecords, metricLossPoints, { hours, bucketCount: HISTORY_BUCKET_COUNT })
+    const sparklineHistory = buildPingHistory(validRecords, metricLossPoints, { hours, bucketCount: SPARKLINE_BUCKET_COUNT })
     const latencyValues = statsWithSamples
       .flatMap(stat => stat.valid > 0 && isFiniteNumber(stat.avg)
         ? [{ value: stat.avg, weight: stat.valid }]
@@ -553,6 +585,7 @@ function buildStats(records: PingRecord[], metricStats?: PingMetricTaskStats[], 
       avgLoss,
       avgVolatility: weightedAverage(volatilityValues),
       history,
+      sparklineHistory,
       hasData: true,
     }
   }
@@ -563,7 +596,8 @@ function buildStats(records: PingRecord[], metricStats?: PingMetricTaskStats[], 
     return createEmptyStats()
 
   const filteredRecords = records.filter(record => includedTaskIds.has(record.task_id))
-  const history = buildPingHistory(filteredRecords)
+  const history = buildPingHistory(filteredRecords, undefined, { hours, bucketCount: HISTORY_BUCKET_COUNT })
+  const sparklineHistory = buildPingHistory(filteredRecords, undefined, { hours, bucketCount: SPARKLINE_BUCKET_COUNT })
   const taskRecords = new Map<number, PingRecord[]>()
 
   for (const record of filteredRecords) {
@@ -614,6 +648,7 @@ function buildStats(records: PingRecord[], metricStats?: PingMetricTaskStats[], 
     avgLoss,
     avgVolatility,
     history,
+    sparklineHistory,
     hasData,
   }
 }
@@ -679,7 +714,7 @@ export function useNodePingStats(
 
     const records = state.recordsByClient.get(nodeUuid) ?? []
     return records.length || state.metricStats?.length
-      ? buildStats(records, state.metricStats, state.metricLossPoints)
+      ? buildStats(records, hours, state.metricStats, state.metricLossPoints)
       : createEmptyStats()
   })
 
@@ -761,21 +796,27 @@ export function useNodePingStats(
       if (state?.source === 'metric') {
         // Latest status is a value, not a history point. Do not fabricate a
         // curve when only task statistics (and no recorded series) exist.
-        const result = buildStats(records, metricStats, lossPoints)
-        return { ...result, history: buildPingHistory(records, lossPoints) }
+        const result = buildStats(records, hours, metricStats, lossPoints)
+        return {
+          ...result,
+          history: buildPingHistory(records, lossPoints, { hours, bucketCount: HISTORY_BUCKET_COUNT }),
+          sparklineHistory: buildPingHistory(records, lossPoints, { hours, bucketCount: SPARKLINE_BUCKET_COUNT }),
+        }
       }
       const valid = records.filter(record => record.value >= 0)
       return {
         avgLatency: average(valid.map(record => record.value)),
         avgLoss: records.length ? (records.length - valid.length) / records.length * 100 : 0,
         avgVolatility: 0,
-        history: buildPingHistory(records),
+        history: buildPingHistory(records, undefined, { hours, bucketCount: HISTORY_BUCKET_COUNT }),
+        sparklineHistory: buildPingHistory(records, undefined, { hours, bucketCount: SPARKLINE_BUCKET_COUNT }),
         hasData: records.length > 0,
       }
     },
     loading,
     error,
     history: computed(() => stats.value.history),
+    sparklineHistory: computed(() => stats.value.sparklineHistory),
     avgLatency: computed(() => stats.value.avgLatency),
     avgLoss: computed(() => stats.value.avgLoss),
     avgVolatility: computed(() => stats.value.avgVolatility),

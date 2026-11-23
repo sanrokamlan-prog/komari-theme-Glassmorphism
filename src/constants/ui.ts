@@ -1,7 +1,7 @@
 export const UI_CONFIG = {
   virtualList: {
     nodeThreshold: 30,
-    nodeRowHeight: 68,
+    nodeRowHeight: 64,
     overscan: 8,
   },
   motion: {

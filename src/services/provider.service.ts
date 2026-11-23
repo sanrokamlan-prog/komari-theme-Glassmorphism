@@ -38,9 +38,9 @@ export function getNodeProviderFingerprint(node: NodeData, customAliases: string
   ].join(FINGERPRINT_SEPARATOR)
 }
 
-export async function lookupNodeGeo(node: NodeData): Promise<IpGeo | null> {
+export async function lookupNodeGeo(node: NodeData, options: { bypassNegativeCache?: boolean } = {}): Promise<IpGeo | null> {
   for (const ip of getNodeIps(node)) {
-    const geo = await lookupIpGeo(ip)
+    const geo = await lookupIpGeo(ip, options)
     if (geo)
       return geo
   }

@@ -16,10 +16,10 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ renderError: [] }>()
 
-const EARTH_DAY_TEXTURE = '/images/earth/earth-blue-marble.jpg'
-const EARTH_NIGHT_TEXTURE = '/images/earth/earth-night.jpg'
-const EARTH_BUMP_MAP = '/images/earth/earth-topology.png'
-const EARTH_SPECULAR_MAP = '/images/earth/earth-water.png'
+const EARTH_DAY_TEXTURE = '/images/earth/earth-blue-marble.webp'
+const EARTH_NIGHT_TEXTURE = '/images/earth/earth-night.webp'
+const EARTH_BUMP_MAP = '/images/earth/earth-topology.webp'
+const EARTH_SPECULAR_MAP = '/images/earth/earth-water.webp'
 const CHINA_COORD: [number, number] = [35.8617, 104.1954]
 
 const appStore = useAppStore()
@@ -206,7 +206,6 @@ async function startGlobe() {
       .htmlElement(createLabelElement)
       .htmlElementVisibilityModifier((el: HTMLElement, isVisible: boolean) => {
         el.style.opacity = isVisible ? '1' : '0'
-        el.style.filter = isVisible ? 'blur(0)' : 'blur(14px)'
       })
       .htmlTransitionDuration(500)
 
@@ -274,12 +273,38 @@ function stopGlobe() {
     globeHostRef.value.replaceChildren()
 }
 
+let cancelScheduledStart: (() => void) | null = null
+
+function scheduleStartGlobe() {
+  if (destroyed || globe || loadingGlobe)
+    return
+
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    const id = window.requestIdleCallback(() => {
+      cancelScheduledStart = null
+      if (!destroyed)
+        void startGlobe()
+    }, { timeout: 400 })
+    cancelScheduledStart = () => window.cancelIdleCallback(id)
+    return
+  }
+
+  const timer = setTimeout(() => {
+    cancelScheduledStart = null
+    if (!destroyed)
+      void startGlobe()
+  }, 120)
+  cancelScheduledStart = () => clearTimeout(timer)
+}
+
 onMounted(() => {
-  void startGlobe()
+  scheduleStartGlobe()
 })
 
 onBeforeUnmount(() => {
   destroyed = true
+  cancelScheduledStart?.()
+  cancelScheduledStart = null
   stopGlobe()
 })
 
@@ -356,10 +381,8 @@ watch(shouldRender, (visible) => {
   pointer-events: none;
   position: relative;
   transform: translate(-50%, -118%);
-  transition:
-    opacity 500ms ease,
-    filter 500ms ease;
-  will-change: opacity, filter;
+  transition: opacity 320ms ease;
+  will-change: opacity;
 }
 
 .earth-globe-host :deep(.earth-label-flag) {

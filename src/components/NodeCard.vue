@@ -293,15 +293,21 @@ function hasFlag(): boolean {
               <ProgressThin :percentage="props.node.cpu ?? 0" :status="cpuStatus" :height="4" />
             </div>
 
-            <div class="flex flex-col gap-1" :title="swapTooltip">
+            <DataTooltip
+              as="div"
+              placement="top"
+              :content="swapTooltip"
+              class="flex min-w-0 flex-col gap-1"
+              content-class="whitespace-nowrap px-2 py-1 left-auto right-0 translate-x-0"
+            >
               <div class="flex justify-between text-xs">
-                <span class="inline-flex items-center text-emerald-500" role="img" title="内存" aria-label="内存">
+                <span class="inline-flex items-center text-emerald-500" role="img" aria-label="内存">
                   <Icon :icon="NODE_METRIC_ICONS.memory" data-node-metric-icon="memory" width="12" height="12" aria-hidden="true" />
                 </span>
                 <span class="tabular-nums font-medium">{{ memPercentage.toFixed(1) }}%</span>
               </div>
               <ProgressThin :percentage="memPercentage" :status="memStatus" :height="4" />
-            </div>
+            </DataTooltip>
 
             <div class="col-span-2 text-[11px] text-muted-foreground truncate">
               {{ formatBytes(props.node.ram ?? 0) }} / {{ formatBytes(props.node.mem_total ?? 0) }}
@@ -333,13 +339,13 @@ function hasFlag(): boolean {
 
         <div v-else class="grid grid-cols-2 gap-x-4 gap-y-2.5">
           <!-- CPU -->
-          <div class="flex flex-col gap-1">
-            <div class="flex justify-between text-xs">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="flex justify-between gap-1 text-xs">
               <span class="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
                 <Icon :icon="NODE_METRIC_ICONS.cpu" data-node-metric-icon="cpu" width="13" height="13" class="shrink-0 text-sky-500" aria-hidden="true" />
                 <span class="truncate">CPU</span>
               </span>
-              <span class="tabular-nums font-medium">{{ (props.node.cpu ?? 0).toFixed(1) }}%</span>
+              <span class="shrink-0 tabular-nums font-medium">{{ (props.node.cpu ?? 0).toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="props.node.cpu ?? 0" :status="cpuStatus" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
@@ -348,28 +354,34 @@ function hasFlag(): boolean {
           </div>
 
           <!-- 内存 -->
-          <div class="flex flex-col gap-1" :title="swapTooltip">
-            <div class="flex justify-between text-xs">
+          <DataTooltip
+            as="div"
+            placement="top"
+            :content="swapTooltip"
+            class="flex min-w-0 flex-col gap-1"
+            content-class="whitespace-nowrap px-2 py-1 left-auto right-0 translate-x-0"
+          >
+            <div class="flex justify-between gap-1 text-xs">
               <span class="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
                 <Icon :icon="NODE_METRIC_ICONS.memory" data-node-metric-icon="memory" width="13" height="13" class="shrink-0 text-emerald-500" aria-hidden="true" />
                 <span class="truncate">内存</span>
               </span>
-              <span class="tabular-nums font-medium">{{ memPercentage.toFixed(1) }}%</span>
+              <span class="shrink-0 tabular-nums font-medium">{{ memPercentage.toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="memPercentage" :status="memStatus" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
               {{ formatBytes(props.node.ram ?? 0) }} / {{ formatBytes(props.node.mem_total ?? 0) }}
             </div>
-          </div>
+          </DataTooltip>
 
           <!-- 硬盘 -->
-          <div class="flex flex-col gap-1">
-            <div class="flex justify-between text-xs">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="flex justify-between gap-1 text-xs">
               <span class="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
                 <Icon :icon="NODE_METRIC_ICONS.disk" data-node-metric-icon="disk" width="13" height="13" class="shrink-0 text-orange-500" aria-hidden="true" />
                 <span class="truncate">硬盘</span>
               </span>
-              <span class="tabular-nums font-medium">{{ diskPercentage.toFixed(1) }}%</span>
+              <span class="shrink-0 tabular-nums font-medium">{{ diskPercentage.toFixed(1) }}%</span>
             </div>
             <ProgressThin :percentage="diskPercentage" :status="diskStatus" :height="4" />
             <div class="text-[11px] text-muted-foreground truncate">
@@ -378,13 +390,13 @@ function hasFlag(): boolean {
           </div>
 
           <!-- 流量（分级颜色） -->
-          <div class="flex flex-col gap-1">
-            <div class="flex justify-between text-xs">
+          <div class="flex min-w-0 flex-col gap-1">
+            <div class="flex justify-between gap-1 text-xs">
               <span class="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
                 <Icon :icon="NODE_METRIC_ICONS.traffic" data-node-metric-icon="traffic" width="13" height="13" class="shrink-0 text-violet-500" aria-hidden="true" />
                 <span class="truncate">流量</span>
               </span>
-              <span class="tabular-nums font-medium" :class="trafficPercentageClass">
+              <span class="shrink-0 tabular-nums font-medium" :class="trafficPercentageClass">
                 {{ hasTrafficLimit(props.node) ? `${trafficUsedPercentage.toFixed(1)}%` : '∞' }}
               </span>
             </div>
@@ -406,11 +418,11 @@ function hasFlag(): boolean {
           <!-- 实时网速 -->
           <div class="flex flex-col gap-0.5 rounded-lg bg-slate-500/5 min-w-0 overflow-hidden" :class="nodeCardMetricBoxClass">
             <div class="text-[11px] text-success flex items-center gap-1">
-              <Icon icon="tabler:chevron-up" width="11" height="11" />
+              <Icon icon="tabler:chevron-up" width="11" height="11" class="shrink-0" />
               <span class="truncate min-w-0 overflow-hidden">{{ formatBytesPerSecond(props.node.net_out ?? 0) }}</span>
             </div>
             <div class="text-[11px] text-blue-600 flex items-center gap-1">
-              <Icon icon="tabler:chevron-down" width="11" height="11" />
+              <Icon icon="tabler:chevron-down" width="11" height="11" class="shrink-0" />
               <span class="truncate min-w-0 overflow-hidden">{{ formatBytesPerSecond(props.node.net_in ?? 0) }}</span>
             </div>
           </div>
@@ -418,11 +430,11 @@ function hasFlag(): boolean {
           <!-- 总流量 -->
           <div class="flex flex-col gap-0.5 rounded-lg bg-slate-500/5 min-w-0 overflow-hidden" :class="nodeCardMetricBoxClass">
             <div class="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Icon icon="tabler:upload" width="11" height="11" />
+              <Icon icon="tabler:upload" width="11" height="11" class="shrink-0" />
               <span class="truncate min-w-0 overflow-hidden">{{ formatBytes(props.node.net_total_up ?? 0) }}</span>
             </div>
             <div class="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Icon icon="tabler:download" width="11" height="11" />
+              <Icon icon="tabler:download" width="11" height="11" class="shrink-0" />
               <span class="truncate min-w-0 overflow-hidden">{{ formatBytes(props.node.net_total_down ?? 0) }}</span>
             </div>
           </div>
@@ -432,16 +444,14 @@ function hasFlag(): boolean {
             <template v-if="remainingInfoTags.length">
               <div
                 v-for="(item, i) in remainingInfoTags" :key="i"
-                class="text-[11px] flex items-center gap-0.5"
+                class="text-[11px] flex min-w-0 items-center gap-0.5"
                 :class="item.className ?? 'text-muted-foreground'"
               >
                 <Icon :icon="item.icon" width="11" height="11" class="shrink-0" />
                 <span v-if="item.text" class="truncate min-w-0 overflow-hidden">{{ item.text }}</span>
-                <template v-else>
-                  <span v-if="item.prefix" class="shrink-0">{{ item.prefix }}</span>
-                  <span v-if="item.value" class="shrink-0 tabular-nums">{{ item.value }}</span>
-                  <span v-if="item.unit" class="shrink-0">{{ item.unit }}</span>
-                </template>
+                <span v-else class="truncate min-w-0 tabular-nums">
+                  {{ item.prefix }}{{ item.value ? ` ${item.value}` : '' }}{{ item.unit ? ` ${item.unit}` : '' }}
+                </span>
               </div>
             </template>
             <template v-else>

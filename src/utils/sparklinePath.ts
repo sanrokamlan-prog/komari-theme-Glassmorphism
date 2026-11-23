@@ -11,17 +11,13 @@ interface SparklinePoint {
   y: number
 }
 
-/** 最小跨度下限：小于此值时波动贴近平线，避免几毫米的抖动被放大成满幅起伏。 */
+/** 最小跨度下限：小于此值时波动贴近平线，避免几毫秒的抖动被放大成满幅起伏。 */
 const MIN_SPAN = 8
 /** 跨度相对基线值的最小比例，量级越大越要求可见的起伏。 */
 const MIN_SPAN_RATIO = 0.2
 
 /**
  * 计算曲线纵向量程。
- *
- * 与详情页延迟图使用同一套标定规则（见 `pingChartAxisScale.ts`）：跨度不足时
- * 向上补齐到最小跨度并把余量平分两侧，使 1ms 波动只占很小的像素高度、
- * 50ms 波动才占满大部分高度，波动幅度比例可辨。
  */
 export function robustDomain(values: number[]): { min: number, max: number } {
   if (!values.length)
@@ -44,10 +40,7 @@ export function robustDomain(values: number[]): { min: number, max: number } {
 }
 
 /**
- * 生成平滑折线路径。
- *
- * 使用水平锚点的三次贝塞尔曲线（Catmull-Rom 转 Bézier）并在锚点处钳制为水平切线，
- * 因此曲线不会在采样点之间过冲出尖刺，也不会越过相邻采样点的取值范围。
+ * 生成单调平滑折线路径（水平切线三次贝塞尔，不会过冲出极值）。
  */
 function smoothPath(points: SparklinePoint[]): string {
   if (points.length < 2)
@@ -58,7 +51,6 @@ function smoothPath(points: SparklinePoint[]): string {
   for (let index = 0; index < points.length - 1; index++) {
     const current = points[index]!
     const next = points[index + 1]!
-    // 锚点处切线保持水平，相邻两段共用同一控制点，保证曲线连续且不过冲。
     const midX = (current.x + next.x) / 2
     parts.push(` C ${midX.toFixed(2)} ${current.y.toFixed(2)}, ${midX.toFixed(2)} ${next.y.toFixed(2)}, ${next.x.toFixed(2)} ${next.y.toFixed(2)}`)
   }
@@ -109,15 +101,15 @@ export function buildSparklineGeometry(
   const height = options.height ?? 28
   const padding = options.padding ?? 2
   const finiteValues = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-  const empty = {
-    linePaths: [] as string[],
-    fillPaths: [] as string[],
-    width,
-    height,
-  }
 
-  if (!finiteValues.length)
-    return empty
+  if (!finiteValues.length) {
+    return {
+      linePaths: [],
+      fillPaths: [],
+      width,
+      height,
+    }
+  }
 
   const domain = robustDomain(finiteValues)
   const range = domain.max - domain.min || 1
@@ -139,14 +131,13 @@ export function buildSparklineGeometry(
   const linePaths: string[] = []
   const fillPaths: string[] = []
   const baseline = height - padding
-  const singlePoint = values.filter(value => typeof value === 'number' && Number.isFinite(value)).length === 1
+  const singlePoint = finiteValues.length === 1
 
   for (const segment of toSegments(values)) {
     const points = segment.map(item => ({
       x: xFor(item.index),
       y: yFor(item.value),
     }))
-    // 单点时补一段水平线，让该点仍可见。
     if (points.length === 1 || singlePoint) {
       const point = points[0]!
       const left = Math.max(0, point.x - 4)

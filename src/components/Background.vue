@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { useDocumentVisibility } from '@vueuse/core'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 
 const appStore = useAppStore()
+const documentVisibility = useDocumentVisibility()
 
 const isLoaded = ref(false)
 const hasError = ref(false)
@@ -86,6 +88,17 @@ function loadImage(url: string) {
 }
 
 const videoRef = ref<HTMLVideoElement | null>(null)
+
+watch([documentVisibility, backgroundType, showMediaBackground], ([visibility, type, active]) => {
+  const video = videoRef.value
+  if (!video || type !== 'video' || !active)
+    return
+
+  if (visibility === 'hidden')
+    video.pause()
+  else
+    void video.play().catch(() => {})
+})
 
 function resetBackgroundState() {
   clearImageLoader()

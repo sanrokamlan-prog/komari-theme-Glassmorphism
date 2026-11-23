@@ -56,7 +56,7 @@ const sizeStyle = computed(() => {
       role="tooltip"
       data-slot="data-tooltip-content"
       :class="cn(
-        'pointer-events-none absolute z-20 hidden rounded bg-foreground/80 p-1 text-[10px] leading-none text-background shadow-lg group-hover/data-tooltip:block group-focus-within/data-tooltip:block whitespace-normal break-words',
+        'pointer-events-none absolute z-30 hidden rounded-md px-2 py-1 text-[11px] font-medium leading-snug group-hover/data-tooltip:block group-focus-within/data-tooltip:block whitespace-normal break-words',
         placementClass[placement],
         props.contentClass,
       )"
@@ -68,9 +68,20 @@ const sizeStyle = computed(() => {
 </template>
 
 <style scoped>
-/* Glass surface selectors must not repaint inverse tooltip text or background. */
+/* 统一毛玻璃悬浮提示风格，与卡片视觉体系保持一致 */
 [data-slot='data-tooltip-content'] {
-  background-color: var(--color-foreground) !important;
-  color: var(--color-background) !important;
+  background-color: var(--glass-light-card-hover, rgb(248 250 252 / 0.9)) !important;
+  color: var(--glass-light-text, #0f172a) !important;
+  border: 1px solid var(--glass-light-border, rgb(226 232 240 / 0.85)) !important;
+  backdrop-filter: blur(14px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(160%) !important;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.16) !important;
+}
+
+:global(.dark) [data-slot='data-tooltip-content'] {
+  background-color: var(--glass-dark-card-hover, rgb(15 23 42 / 0.92)) !important;
+  color: var(--glass-dark-text, #f8fafc) !important;
+  border: 1px solid var(--glass-dark-border, rgb(255 255 255 / 0.18)) !important;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.48) !important;
 }
 </style>

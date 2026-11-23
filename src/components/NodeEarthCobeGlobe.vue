@@ -98,7 +98,7 @@ const markers = computed<Marker[]>(() => {
   }))
 })
 
-function getClusterStyle(coord: [number, number]): { transform: string, opacity: string, filter: string } {
+function getClusterStyle(coord: [number, number]): { transform: string, opacity: string } {
   const [lat, lng] = coord
   const lambda = lng * Math.PI / 180
   const beta = lat * Math.PI / 180
@@ -111,11 +111,11 @@ function getClusterStyle(coord: [number, number]): { transform: string, opacity:
   const visible = z > -0.08
   const nextX = (center + x * radius * 0.84).toFixed(1)
   const nextY = (center - y * radius * 0.84).toFixed(1)
+  const scale = visible ? 1 : 0.72
 
   return {
-    transform: `translate3d(${nextX}px, ${nextY}px, 0) translate(-50%, -50%)`,
+    transform: `translate3d(${nextX}px, ${nextY}px, 0) translate(-50%, -50%) scale(${scale})`,
     opacity: visible ? '1' : '0',
-    filter: visible ? 'blur(0)' : 'blur(12px)',
   }
 }
 
@@ -126,8 +126,8 @@ function applyLabelStyles() {
       continue
     const style = getClusterStyle(cluster.coord)
     element.style.transform = style.transform
-    element.style.opacity = style.opacity
-    element.style.filter = style.filter
+    if (element.style.opacity !== style.opacity)
+      element.style.opacity = style.opacity
   }
 }
 
@@ -139,7 +139,6 @@ function setLabelRef(id: string, element: Element | ComponentPublicInstance | nu
       const style = getClusterStyle(cluster.coord)
       element.style.transform = style.transform
       element.style.opacity = style.opacity
-      element.style.filter = style.filter
     }
     return
   }
@@ -385,7 +384,7 @@ function onPointerUp(e: PointerEvent) {
       v-for="label in cobeLabels"
       :key="label.id"
       :ref="bindLabelRef(label.id)"
-      class="absolute left-0 top-0 z-3 rounded-[0.18rem] transition-[opacity,filter] duration-300"
+      class="absolute left-0 top-0 z-3 rounded-[0.18rem] transition-opacity duration-300"
     >
       <img
         :src="`/images/flags/${label.code}.svg`" :alt="label.code"

@@ -133,6 +133,10 @@ export class SharedCache<T> {
   }
 }
 
+/**
+ * 并发请求去重器（in-flight deduplication）：
+ * 相同 key 在 Promise 尚未 settle 时复用同一个 Promise，完成后自动移除。
+ */
 export class PromiseCache<T> {
   private readonly cache: SharedCache<Promise<T>>
 
@@ -154,14 +158,9 @@ export class PromiseCache<T> {
       throw error
     }
 
-    const promise = sourcePromise
-      .catch((error) => {
-        this.cache.delete(key)
-        throw error
-      })
-      .finally(() => {
-        this.cache.delete(key)
-      })
+    const promise = sourcePromise.finally(() => {
+      this.cache.delete(key)
+    })
     this.cache.set(key, promise)
     return promise
   }

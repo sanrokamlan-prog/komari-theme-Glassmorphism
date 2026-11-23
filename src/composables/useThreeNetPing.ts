@@ -51,7 +51,13 @@ export function useThreeNetPing(node: MaybeRefOrGetter<NodeData>, stats: ReturnT
   })
   const historyItems = computed(() => taskIds.value.map((id) => {
     const value = stats.taskStats(id)
-    return { id, stats: value, values: value.history.map(point => point.latency) }
+    const curvePoints = value.sparklineHistory.length ? value.sparklineHistory : value.history
+    return {
+      id,
+      stats: value,
+      sparklineHistory: curvePoints,
+      values: curvePoints.map(point => point.latency),
+    }
   }))
   const items = computed(() => historyItems.value.map((item) => {
     const sample = toValue(node).ping?.[String(item.id)]

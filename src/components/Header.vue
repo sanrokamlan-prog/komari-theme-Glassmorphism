@@ -5,7 +5,6 @@ import { useRouter } from 'vue-router'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import VisitorInfo from '@/components/VisitorInfo.vue'
 import { useVisitorAudit } from '@/composables/useVisitorAudit'
 import { useAppStore } from '@/stores/app'
 
@@ -18,6 +17,7 @@ const isScrolled = inject<ReturnType<typeof ref<boolean>>>('isScrolled', ref(fal
 const siteFavicon = ref('/favicon.ico')
 const pingSettingsOpen = ref(false)
 const ThemePingSettings = defineAsyncComponent(() => import('@/components/ThemePingSettings.vue'))
+const VisitorInfo = defineAsyncComponent(() => import('@/components/VisitorInfo.vue'))
 
 const actionButtons = computed(() => {
   const themeTitleMap = {

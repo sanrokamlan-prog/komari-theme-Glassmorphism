@@ -14,9 +14,9 @@ const VISIBLE_NORTH_LAT = 74
 const VISIBLE_SOUTH_LAT = -58
 const TEXTURE_FULL_HEIGHT = MAP_HEIGHT * 180 / (VISIBLE_NORTH_LAT - VISIBLE_SOUTH_LAT)
 const TEXTURE_SOURCE_Y = TEXTURE_FULL_HEIGHT * (90 - VISIBLE_NORTH_LAT) / 180
-const EARTH_DAY_TEXTURE = '/images/earth/earth-blue-marble.jpg'
-const EARTH_BUMP_MAP = '/images/earth/earth-topology.png'
-const EARTH_SPECULAR_MAP = '/images/earth/earth-water.png'
+const EARTH_DAY_TEXTURE = '/images/earth/earth-blue-marble.webp'
+const EARTH_BUMP_MAP = '/images/earth/earth-topology.webp'
+const EARTH_SPECULAR_MAP = '/images/earth/earth-water.webp'
 
 interface MapPoint {
   x: number

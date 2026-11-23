@@ -16,6 +16,7 @@ interface UseNodeProviderMetadataOptions {
   enabled?: MaybeRefOrGetter<boolean>
   allowGeoLookup?: MaybeRefOrGetter<boolean>
   geoPermission?: PermissionKey
+  retryOnMissingGeo?: boolean
 }
 
 interface SharedCacheEntry {
@@ -45,13 +46,45 @@ function releaseSharedMetadataEntry(entry: SharedCacheEntry, subscriber: (metada
   sharedMetadataCache.sweep()
 }
 
-function getSharedMetadataEntry(node: NodeData, customAliases: string, allowGeoLookup: boolean): { fingerprint: string, entry: SharedCacheEntry } {
-  const fingerprint = getNodeProviderFingerprint(node, customAliases, allowGeoLookup)
-  const cached = sharedMetadataCache.get(fingerprint)
-  if (cached)
-    return { fingerprint, entry: cached }
+function triggerGeoLookup(
+  entry: SharedCacheEntry,
+  node: NodeData,
+  customAliases: string,
+  bypassNegativeCache = false,
+): void {
+  entry.promise = lookupNodeGeo(node, { bypassNegativeCache })
+    .then((geo) => {
+      entry.metadata = buildRawNodeProviderMetadata(node, customAliases, geo, false)
+      notifySharedEntry(entry)
+    })
+    .catch(() => {
+      entry.metadata = buildRawNodeProviderMetadata(node, customAliases, null, false)
+      notifySharedEntry(entry)
+    })
+    .finally(() => {
+      entry.promise = null
+      sharedMetadataCache.sweep()
+    })
+}
 
+function getSharedMetadataEntry(
+  node: NodeData,
+  customAliases: string,
+  allowGeoLookup: boolean,
+  retryOnMissingGeo = false,
+): { fingerprint: string, entry: SharedCacheEntry } {
+  const fingerprint = getNodeProviderFingerprint(node, customAliases, allowGeoLookup)
   const hasIps = allowGeoLookup && getNodeIps(node).length > 0
+  const cached = sharedMetadataCache.get(fingerprint)
+  if (cached) {
+    // 单机详情页打开时，若此前在首页批量查询阶段命中失败空缓存，立即重试一次
+    if (retryOnMissingGeo && hasIps && !cached.metadata.geo && !cached.promise) {
+      cached.metadata = buildRawNodeProviderMetadata(node, customAliases, null, true)
+      triggerGeoLookup(cached, node, customAliases, true)
+    }
+    return { fingerprint, entry: cached }
+  }
+
   const entry: SharedCacheEntry = {
     metadata: buildRawNodeProviderMetadata(node, customAliases, null, hasIps),
     subscribers: new Set(),
@@ -59,21 +92,8 @@ function getSharedMetadataEntry(node: NodeData, customAliases: string, allowGeoL
   }
   sharedMetadataCache.set(fingerprint, entry)
 
-  if (hasIps) {
-    entry.promise = lookupNodeGeo(node)
-      .then((geo) => {
-        entry.metadata = buildRawNodeProviderMetadata(node, customAliases, geo, false)
-        notifySharedEntry(entry)
-      })
-      .catch(() => {
-        entry.metadata = buildRawNodeProviderMetadata(node, customAliases, null, false)
-        notifySharedEntry(entry)
-      })
-      .finally(() => {
-        entry.promise = null
-        sharedMetadataCache.sweep()
-      })
-  }
+  if (hasIps)
+    triggerGeoLookup(entry, node, customAliases, retryOnMissingGeo)
 
   return { fingerprint, entry }
 }
@@ -137,7 +157,7 @@ export function useNodeProviderMetadata(options: UseNodeProviderMetadataOptions)
       }
 
       for (const node of nodes) {
-        const { fingerprint, entry } = getSharedMetadataEntry(node, customAliases, effectiveAllowGeoLookup)
+        const { fingerprint, entry } = getSharedMetadataEntry(node, customAliases, effectiveAllowGeoLookup, options.retryOnMissingGeo)
         activeFingerprints.set(node.uuid, fingerprint)
         nextMetadata[node.uuid] = entry.metadata
 

@@ -12,7 +12,6 @@ import { ProgressThin } from '@/components/ui/progress-thin'
 import { useNodeProviderMetadata } from '@/composables/useNodeProviderMetadata'
 import { UI_CONFIG } from '@/constants/ui'
 import { useAppStore } from '@/stores/app'
-import { formatCityNameZh } from '@/utils/cityNameHelper'
 import { formatBytesPerSecondWithConfig, formatBytesWithConfig, formatDateTime, formatUptimeWithFormat, getStatus } from '@/utils/helper'
 import { getRealtimeTotalSpeed, getTrafficUsed, getTrafficUsedPercentage, hasTrafficLimit } from '@/utils/nodeMetricsHelper'
 import { getOSImage, getOSName } from '@/utils/osImageHelper'
@@ -64,14 +63,14 @@ const showPrice = computed(() => appStore.privateFeaturesAllowed || !appStore.hi
 const baseColumns: ColumnConfig[] = [
   { key: 'status', label: '状态', width: '40px', sortable: false },
   { key: 'os', label: '系统', width: '44px', sortable: false },
-  { key: 'name', label: '节点', width: 'minmax(180px, 0.85fr)', sortable: true },
-  { key: 'metadata', label: '信息', width: 'minmax(240px, 1.1fr)', sortable: false },
+  { key: 'name', label: '节点', width: 'minmax(180px, 0.9fr)', sortable: true },
+  { key: 'metadata', label: '信息', width: 'minmax(230px, 1.1fr)', sortable: false },
   { key: 'uptime', label: '运行时间', width: '116px', sortable: true },
-  { key: 'cpu', label: 'CPU', width: '100px', sortable: false },
-  { key: 'mem', label: '内存', width: '100px', sortable: false },
-  { key: 'disk', label: '硬盘', width: '100px', sortable: false },
-  { key: 'traffic', label: '流量', width: '104px', sortable: false },
-  { key: 'rate', label: '速率', width: '88px', sortable: true },
+  { key: 'cpu', label: 'CPU', width: '96px', sortable: true },
+  { key: 'mem', label: '内存', width: '96px', sortable: true },
+  { key: 'disk', label: '硬盘', width: '96px', sortable: true },
+  { key: 'traffic', label: '流量', width: '100px', sortable: true },
+  { key: 'rate', label: '速率', width: '92px', sortable: true },
 ]
 
 const columns = computed(() => baseColumns.filter(col => col.key !== 'metadata' || appStore.nodeListMetadataEnabled))
@@ -162,13 +161,13 @@ const renderedRows = computed(() => shouldVirtualizeNodes.value
   ? virtualRows.value
   : sortedNodes.value.map((node, index) => ({ data: node, index })))
 const nodeRowsViewportBind = computed(() => shouldVirtualizeNodes.value ? virtualContainerProps : {})
-const nodeRowsViewportClass = computed(() => shouldVirtualizeNodes.value ? 'max-h-[min(72vh,54rem)] overflow-y-auto pr-1' : '')
+const nodeRowsViewportClass = computed(() => shouldVirtualizeNodes.value ? 'max-h-[min(72vh,54rem)] overflow-y-auto' : '')
 const nodeRowsContainerComponent = computed(() => shouldVirtualizeNodes.value ? 'div' : TransitionGroup)
 const nodeRowsContainerBind = computed(() => {
   if (shouldVirtualizeNodes.value) {
     return {
       ...virtualWrapperProps.value,
-      class: 'flex flex-col gap-1',
+      class: 'flex flex-col',
     }
   }
 
@@ -177,7 +176,7 @@ const nodeRowsContainerBind = computed(() => {
     css: !appStore.disablePageAnimation,
     name: 'node-row-switch',
     tag: 'div',
-    class: 'flex flex-col gap-1',
+    class: 'flex flex-col',
   }
 })
 
@@ -298,7 +297,7 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
           icon: provider.primary.icon,
           title: provider.tooltipLines.length > 0 ? provider.tooltipLines.join('\n') : provider.displayName,
           variant: 'secondary',
-          class: 'max-w-[9.5rem] bg-secondary/85 text-secondary-foreground border-border/40',
+          class: 'min-w-0 shrink max-w-[9rem] bg-secondary/85 text-secondary-foreground border-border/40',
         })
         break
       }
@@ -316,13 +315,12 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
           flagSrc: getFlagSrc(node.region),
           title: displayName,
           variant: 'outline',
-          class: 'max-w-[8rem] bg-background/45 text-foreground/80 border-border/60',
+          class: 'shrink-0 bg-background/45 text-foreground/80 border-border/60',
         })
         break
       }
       case 'city': {
-        const city = providerMetadata?.geo?.city
-        const cityName = formatCityNameZh(city)
+        const cityName = providerMetadata?.geo?.city?.trim()
         if (!cityName)
           break
 
@@ -332,7 +330,7 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
           icon: 'tabler:map-pin',
           title: [cityName, providerMetadata?.geo?.countryCode].filter(Boolean).join(' · '),
           variant: 'outline',
-          class: 'max-w-[8rem] bg-background/45 text-foreground/80 border-border/60',
+          class: 'min-w-0 shrink max-w-[7.5rem] bg-background/45 text-foreground/80 border-border/60',
         })
         break
       }
@@ -347,7 +345,7 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
           icon: 'tabler:network',
           title: providerMetadata?.geo?.org ? `${asn}\n${providerMetadata.geo.org}` : asn,
           variant: 'outline',
-          class: 'max-w-[7rem] bg-info/10 text-info border-info/25 font-mono',
+          class: 'shrink-0 bg-info/10 text-info border-info/25 font-mono',
         })
         break
       }
@@ -389,17 +387,18 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
 </script>
 
 <template>
-  <div class="overflow-x-auto overflow-y-hidden min-w-0 p-1 -m-1">
-    <div class="min-w-fit w-full flex flex-col gap-1">
+  <div class="node-list-shell overflow-x-auto overflow-y-hidden min-w-0 rounded-xl">
+    <div class="min-w-fit w-full flex flex-col">
       <!-- 表头 -->
-      <div class="grid px-2.5 py-2 bg-background/70 rounded-lg backdrop-blur-sm gap-2" :style="gridStyle">
+      <div class="grid px-3 py-2.5 bg-slate-500/8 dark:bg-white/[0.04] border-b border-border/60 gap-2.5" :style="gridStyle">
         <div
           v-for="col in columns" :key="col.key"
-          :class="[col.sortable ? 'cursor-pointer select-none' : '', ['status', 'os'].includes(col.key) ? 'text-center' : 'text-left']"
+          :class="[col.sortable ? 'cursor-pointer select-none hover:text-foreground transition-colors' : '', ['status', 'os'].includes(col.key) ? 'text-center' : 'text-left']"
           @click="handleSort(col)"
         >
-          <span class="text-[11px] font-medium tracking-wide text-foreground/70">
-            {{ col.label }}{{ col.sortable && sortKey === col.key ? (sortDir === 1 ? ' ↑' : ' ↓') : '' }}
+          <span class="inline-flex items-center gap-0.5 text-[11px] font-semibold tracking-wide text-muted-foreground">
+            <span>{{ col.label }}</span>
+            <span v-if="col.sortable && sortKey === col.key" class="text-selection">{{ sortDir === 1 ? '↑' : '↓' }}</span>
           </span>
         </div>
       </div>
@@ -409,8 +408,8 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
           <div
             v-for="({ data: node, index }) in renderedRows"
             :key="getRowTransitionKey(node)"
-            class="flex flex-col relative h-16 min-h-16 max-h-16 overflow-hidden justify-center px-2.5 cursor-pointer bg-background/40 rounded-lg backdrop-blur-sm shadow-[0_0_0_2px] shadow-transparent hover:shadow-slate-500/10 hover:bg-background/70 transition-all"
-            :class="[!node.online && '!shadow-red-600/10']"
+            class="node-list-row flex flex-col relative h-16 min-h-16 max-h-16 justify-center px-3 cursor-pointer border-b border-border/40 last:border-b-0 odd:bg-transparent even:bg-slate-500/[0.025] dark:even:bg-white/[0.02] hover:bg-slate-500/[0.08] dark:hover:bg-white/[0.06] transition-colors"
+            :class="[!node.online && 'bg-destructive/[0.04]']"
             :style="getRowTransitionStyle(index)"
             role="button"
             tabindex="0"
@@ -418,7 +417,7 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
             @click="handleClick(node)"
             @keydown="handleRowKeydown($event, node)"
           >
-            <div class="grid gap-2 items-center overflow-hidden" :style="gridStyle">
+            <div class="grid gap-2.5 items-center" :style="gridStyle">
               <template v-for="col in columns" :key="col.key">
                 <!-- 在线状态指示器 -->
                 <div v-if="col.key === 'status'" class="flex justify-center">
@@ -470,21 +469,30 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
                   </div>
                 </div>
 
-                <!-- 信息 / 标签 -->
-                <div v-else-if="col.key === 'metadata'" class="min-w-0 overflow-hidden">
-                  <div v-if="getNodeMetadataItems(node).length > 0" class="flex flex-wrap gap-1 items-center max-h-11 overflow-hidden">
-                    <Badge
-                      v-for="item in getNodeMetadataItems(node)" :key="item.key"
-                      :variant="item.variant ?? 'secondary'"
-                      :title="item.title ?? item.value"
-                      :style="item.style"
-                      class="min-w-0 overflow-hidden whitespace-nowrap rounded-md px-1.5 text-[11px] font-medium shadow-none"
-                      :class="item.class"
+                <!-- 信息 / 标签（单行不折行，长厂商名自动压缩，保证地区与 ASN 完整显示） -->
+                <div v-else-if="col.key === 'metadata'" class="min-w-0">
+                  <div v-if="getNodeMetadataItems(node).length > 0" class="flex flex-nowrap gap-1 items-center min-w-0">
+                    <DataTooltip
+                      v-for="item in getNodeMetadataItems(node)"
+                      :key="item.key"
+                      as="span"
+                      :placement="index === 0 ? 'bottom' : 'top'"
+                      :content="item.title ?? item.value"
+                      class="inline-flex min-w-0"
+                      :class="item.key === 'provider' || item.key === 'city' ? 'shrink' : 'shrink-0'"
+                      content-class="max-w-64 whitespace-pre-wrap break-words text-left"
                     >
-                      <img v-if="item.flagSrc" :src="item.flagSrc" :alt="item.value" class="size-3.5 rounded-[2px] shrink-0">
-                      <Icon v-else-if="item.icon" :icon="item.icon" width="12" height="12" class="shrink-0" />
-                      <span class="truncate">{{ item.value }}</span>
-                    </Badge>
+                      <Badge
+                        :variant="item.variant ?? 'secondary'"
+                        :style="item.style"
+                        class="h-5 overflow-hidden whitespace-nowrap rounded-md px-1.5 text-[10.5px] font-medium shadow-none"
+                        :class="item.class"
+                      >
+                        <img v-if="item.flagSrc" :src="item.flagSrc" :alt="item.value" class="size-3.5 rounded-[2px] shrink-0">
+                        <Icon v-else-if="item.icon" :icon="item.icon" width="11" height="11" class="shrink-0" />
+                        <span class="truncate">{{ item.value }}</span>
+                      </Badge>
+                    </DataTooltip>
                   </div>
                 </div>
 
@@ -507,72 +515,74 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
                 </div>
 
                 <!-- CPU -->
-                <div v-else-if="col.key === 'cpu'" class="group min-w-0">
+                <DataTooltip
+                  v-else-if="col.key === 'cpu'"
+                  as="div"
+                  :placement="index === 0 ? 'bottom' : 'top'"
+                  :content="`负载 ${(node.load ?? 0).toFixed(2)}, ${(node.load5 ?? 0).toFixed(2)}, ${(node.load15 ?? 0).toFixed(2)}`"
+                  class="min-w-0 w-full"
+                  content-class="whitespace-nowrap tabular-nums"
+                >
                   <div class="space-y-1">
-                    <div class="text-[11px] font-medium text-foreground/75 truncate">
-                      <span class="inline group-hover:hidden">
-                        {{ (node.cpu ?? 0).toFixed(1) }}%
-                      </span>
-                      <span class="hidden group-hover:inline">
-                        {{ (node.load ?? 0).toFixed(2) }}, {{ (node.load5 ?? 0).toFixed(2) }}, {{ (node.load15 ?? 0).toFixed(2) }}
-                      </span>
+                    <div class="text-[11px] font-medium tabular-nums text-foreground/80 truncate">
+                      {{ (node.cpu ?? 0).toFixed(1) }}%
                     </div>
                     <ProgressThin :percentage="node.cpu ?? 0" :status="getStatus(node.cpu ?? 0)" :height="4" />
                   </div>
-                </div>
+                </DataTooltip>
 
                 <!-- 内存 -->
-                <div v-else-if="col.key === 'mem'" class="group min-w-0">
+                <DataTooltip
+                  v-else-if="col.key === 'mem'"
+                  as="div"
+                  :placement="index === 0 ? 'bottom' : 'top'"
+                  :content="`${formatBytes(node.ram ?? 0)} / ${formatBytes(node.mem_total ?? 0)}${(node.swap_total ?? 0) > 0 ? `\nSwap ${formatBytes(node.swap ?? 0)} / ${formatBytes(node.swap_total ?? 0)}` : ''}`"
+                  class="min-w-0 w-full"
+                  content-class="whitespace-pre text-left tabular-nums"
+                >
                   <div class="space-y-1">
-                    <div class="text-[11px] font-medium text-foreground/75 truncate">
-                      <span class="inline group-hover:hidden">
-                        {{ ((node.ram ?? 0) / (node.mem_total || 1) * 100).toFixed(1) }}%
-                      </span>
-                      <span class="hidden group-hover:inline">
-                        {{ formatBytes(node.ram ?? 0) }} / {{ formatBytes(node.mem_total ?? 0) }}
-                      </span>
+                    <div class="text-[11px] font-medium tabular-nums text-foreground/80 truncate">
+                      {{ ((node.ram ?? 0) / (node.mem_total || 1) * 100).toFixed(1) }}%
                     </div>
                     <ProgressThin
                       :percentage="(node.ram ?? 0) / (node.mem_total || 1) * 100"
                       :status="getStatus((node.ram ?? 0) / (node.mem_total || 1) * 100)" :height="4"
                     />
                   </div>
-                </div>
+                </DataTooltip>
 
                 <!-- 硬盘 -->
-                <div v-else-if="col.key === 'disk'" class="group min-w-0">
+                <DataTooltip
+                  v-else-if="col.key === 'disk'"
+                  as="div"
+                  :placement="index === 0 ? 'bottom' : 'top'"
+                  :content="`${formatBytes(node.disk ?? 0)} / ${formatBytes(node.disk_total ?? 0)}`"
+                  class="min-w-0 w-full"
+                  content-class="whitespace-nowrap tabular-nums"
+                >
                   <div class="space-y-1">
-                    <div class="text-[11px] font-medium text-foreground/75 truncate">
-                      <span class="inline group-hover:hidden">
-                        {{ ((node.disk ?? 0) / (node.disk_total || 1) * 100).toFixed(1) }}%
-                      </span>
-                      <span class="hidden group-hover:inline">
-                        {{ formatBytes(node.disk ?? 0) }} / {{ formatBytes(node.disk_total ?? 0) }}
-                      </span>
+                    <div class="text-[11px] font-medium tabular-nums text-foreground/80 truncate">
+                      {{ ((node.disk ?? 0) / (node.disk_total || 1) * 100).toFixed(1) }}%
                     </div>
                     <ProgressThin
                       :percentage="(node.disk ?? 0) / (node.disk_total || 1) * 100"
                       :status="getStatus((node.disk ?? 0) / (node.disk_total || 1) * 100)" :height="4"
                     />
                   </div>
-                </div>
+                </DataTooltip>
 
                 <!-- 流量 -->
-                <div
+                <DataTooltip
                   v-else-if="col.key === 'traffic'"
-                  class="group min-w-0"
-                  :title="`↑ ${formatBytes(node.net_total_up ?? 0)}\n↓ ${formatBytes(node.net_total_down ?? 0)}`"
+                  as="div"
+                  :placement="index === 0 ? 'bottom' : 'top'"
+                  :content="`${formatBytes(getTrafficUsed(node))} / ${hasTrafficLimit(node) ? formatBytes(node.traffic_limit) : '∞'}\n↑ ${formatBytes(node.net_total_up ?? 0)}  ↓ ${formatBytes(node.net_total_down ?? 0)}`"
+                  class="min-w-0 w-full"
+                  content-class="whitespace-pre text-left tabular-nums"
                 >
                   <div class="space-y-1 w-full">
-                    <div class="text-[11px] font-medium text-foreground/75 truncate">
-                      <span class="inline group-hover:hidden">
-                        {{ getTrafficUsedPercentage(node).toFixed(1) }}%
-                      </span>
-                      <span class="hidden group-hover:inline">
-                        {{ formatBytes(getTrafficUsed(node)) }} /
-                        <template v-if="hasTrafficLimit(node)">{{ formatBytes(node.traffic_limit) }}</template>
-                        <template v-else>∞</template>
-                      </span>
+                    <div class="text-[11px] font-medium tabular-nums text-foreground/80 truncate">
+                      {{ hasTrafficLimit(node) ? `${getTrafficUsedPercentage(node).toFixed(1)}%` : '∞' }}
                     </div>
                     <TrafficProgress
                       :upload="node.net_total_up ?? 0" :download="node.net_total_down ?? 0"
@@ -580,11 +590,11 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
                       height="4px"
                     />
                   </div>
-                </div>
+                </DataTooltip>
 
                 <!-- 速率 -->
                 <div v-else-if="col.key === 'rate'" class="min-w-0">
-                  <div class="text-[11px] font-medium flex flex-col">
+                  <div class="text-[11px] font-medium tabular-nums flex flex-col">
                     <span class="text-success flex flex-row gap-1 items-center truncate">
                       <Icon icon="tabler:chevron-up" width="12" height="12" class="shrink-0" />
                       {{ formatBytesPerSecond(node.net_out ?? 0) }}
@@ -621,6 +631,22 @@ function buildNodeMetadataItems(node: NodeData): NodeMetadataItem[] {
 </template>
 
 <style scoped>
+.node-list-shell {
+  background-color: var(--glass-light-card, rgb(241 245 249 / 0.8));
+  border: 1px solid var(--glass-light-border, rgb(226 232 240 / 0.72));
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: var(--glass-light-shadow, 0 8px 28px rgb(15 23 42 / 0.14));
+  color: var(--glass-light-text, var(--color-foreground));
+}
+
+:global(.dark) .node-list-shell {
+  background-color: var(--glass-dark-card, rgb(10 14 22 / 0.84));
+  border: 1px solid var(--glass-dark-border, rgb(255 255 255 / 0.16));
+  box-shadow: var(--glass-dark-shadow, 0 8px 30px rgb(0 0 0 / 0.48));
+  color: var(--glass-dark-text, var(--color-foreground));
+}
+
 .node-row-switch-enter-active,
 .node-row-switch-leave-active {
   transition:
